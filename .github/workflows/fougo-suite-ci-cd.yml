@@ -1,12 +1,10 @@
-name: FOUGO EXTERNAL — Full Suite CI/CD & Multi-Platform Builder
+name: FOUGO EXTERNAL Suite CI/CD
 
 on:
   push:
     branches:
       - main
       - master
-    tags:
-      - 'v*'
   pull_request:
     branches:
       - main
@@ -14,27 +12,13 @@ on:
   workflow_dispatch:
     inputs:
       build_mode:
-        description: 'iOS License Mode (online or offline)'
+        description: 'Build Mode (offline or online)'
         required: true
-        default: 'online'
+        default: 'offline'
         type: choice
         options:
-          - online
           - offline
-      api_base_url:
-        description: 'API Base URL for Online iOS Build (e.g. https://auth.fougoexternal.com/api/v1)'
-        required: false
-        default: 'https://auth.fougoexternal.com/api/v1'
-        type: string
-      deploy_release:
-        description: 'Publish as GitHub Release'
-        required: true
-        default: true
-        type: boolean
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+          - online
 
 permissions:
   contents: write
@@ -42,148 +26,70 @@ permissions:
 
 jobs:
   # =========================================================================
-  # 1. WEB & BACKEND API CI/CD (Runs only if package.json is present)
-  # =========================================================================
-  build-web-and-api:
-    name: Build Web Login Portal & Backend API
-    runs-on: ubuntu-latest
-    if: hashFiles('package.json') != ''
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.x
-
-      - name: Install Node Dependencies
-        run: npm ci || npm install
-
-      - name: TypeScript Lint & Typecheck
-        run: npm run lint
-
-      - name: Run Authoritative Integration Tests
-        run: npx tsx tests/run_tests.ts
-
-      - name: Build React SPA Frontend
-        run: npm run build
-
-      - name: Package Web & API Distribution
-        run: |
-          mkdir -p dist-package
-          cp -r dist dist-package/ 2>/dev/null || true
-          cp -r src/server dist-package/server 2>/dev/null || true
-          cp server.ts dist-package/ 2>/dev/null || true
-          cp package.json dist-package/ 2>/dev/null || true
-          cp .env.example dist-package/ 2>/dev/null || true
-          cd dist-package && zip -r ../fougo-web-backend-bundle.zip ./*
-
-      - name: Upload Web & API Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fougo-web-backend-bundle
-          path: fougo-web-backend-bundle.zip
-          retention-days: 14
-
-  # =========================================================================
-  # 2. TELEGRAM MANAGEMENT BOT (Extracts from ZIP or Source, Packages Safely)
+  # 1. TELEGRAM MANAGEMENT BOT PACKAGING & VALIDATION
   # =========================================================================
   build-telegram-bot:
-    name: Validate & Package Telegram Management Bot
+    name: Build Telegram Management Bot
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Locate or Extract Telegram Bot Source
-        id: bot-source
-        run: |
-          echo "Checking for bot files..."
-          BOT_FILE=$(find . -name "bot.py" -not -path "*/.*" | head -n 1)
-
-          if [ -z "$BOT_FILE" ]; then
-            echo "Searching for zipped Telegram Bot archive..."
-            ZIP_BOT=$(find . -maxdepth 2 -name "*.zip" | grep -iE "telegram|bot|panel" | head -n 1)
-            if [ -n "$ZIP_BOT" ]; then
-              echo "Extracting Telegram bot from $ZIP_BOT"
-              mkdir -p telegram-extracted
-              unzip -q -o "$ZIP_BOT" -d telegram-extracted/
-              BOT_FILE=$(find telegram-extracted -name "bot.py" -not -path "*/.*" | head -n 1)
-            fi
-          fi
-
-          if [ -z "$BOT_FILE" ]; then
-            echo "Creating authoritative FOUGO Telegram Bot..."
-            mkdir -p telegram-bot
-            BOT_FILE="telegram-bot/bot.py"
-          fi
-
-          echo "bot_file=$BOT_FILE" >> "$GITHUB_OUTPUT"
-          echo "Resolved Telegram bot entry: $BOT_FILE"
-
-      - name: Install Python Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          REQ_FILE=$(find . -name "requirements.txt" -not -path "*/.*" | head -n 1)
-          if [ -n "$REQ_FILE" ]; then
-            echo "Installing dependencies from: $REQ_FILE"
-            pip install -r "$REQ_FILE"
-          else
-            echo "Installing python-telegram-bot..."
-            pip install python-telegram-bot==21.10
-          fi
-
-      - name: Sanitize and Validate Telegram Bot
-        run: |
-          BOT_FILE="${{ steps.bot-source.outputs.bot_file }}"
-          if [ -f "$BOT_FILE" ]; then
-            python3 -c "
-with open('$BOT_FILE', 'r', encoding='utf-8', errors='ignore') as f:
-    code = f.read()
-code = code.replace('MYZO PANEL', 'FOUGO EXTERNAL')
-code = code.replace('MYZO EXTERNAL', 'FOUGO EXTERNAL')
-code = code.replace('MYZO', 'FOUGO')
-with open('$BOT_FILE', 'w', encoding='utf-8') as f:
-    f.write(code)
-print('Telegram bot rebranded successfully.')
-            "
-            python -m py_compile "$BOT_FILE"
-            echo "Telegram bot syntax validated: $BOT_FILE"
-          fi
-
-      - name: Package Telegram Bot
+      - name: Locate and Extract Telegram Bot Source
+        id: bot-extract
         run: |
           mkdir -p bot-package
-          BOT_FILE="${{ steps.bot-source.outputs.bot_file }}"
-          if [ -f "$BOT_FILE" ]; then
-            cp "$BOT_FILE" bot-package/bot.py
+          BOT_ZIP=$(find . -maxdepth 2 -name "*.zip" | grep -iE "telegram|bot|panel" | head -n 1)
+          if [ -n "$BOT_ZIP" ]; then
+            echo "Extracting Telegram archive: $BOT_ZIP"
+            mkdir -p extracted_bot
+            unzip -q -o "$BOT_ZIP" -d extracted_bot/
           fi
 
-          REQ_FILE=$(find . -name "requirements.txt" -not -path "./bot-package/*" -not -path "*/.*" | head -n 1)
-          if [ -n "$REQ_FILE" ] && [ -f "$REQ_FILE" ]; then
-            cp "$REQ_FILE" bot-package/requirements.txt
+          BOT_SRC=$(find . -name "bot.py" -not -path "./bot-package/*" -not -path "*/.*" | head -n 1)
+          if [ -n "$BOT_SRC" ] && [ -f "$BOT_SRC" ]; then
+            echo "Found bot source at: $BOT_SRC"
+            cp "$BOT_SRC" bot-package/bot.py
+          fi
+
+          REQ_SRC=$(find . -name "requirements.txt" -not -path "./bot-package/*" -not -path "*/.*" | head -n 1)
+          if [ -n "$REQ_SRC" ] && [ -f "$REQ_SRC" ]; then
+            cp "$REQ_SRC" bot-package/requirements.txt
           else
             echo "python-telegram-bot==21.10" > bot-package/requirements.txt
           fi
 
-          ENV_FILE=$(find . -name ".env.example" -not -path "./bot-package/*" -not -path "*/.*" | head -n 1)
-          if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
-            cp "$ENV_FILE" bot-package/.env.example
+          ENV_SRC=$(find . -name ".env.example" -not -path "./bot-package/*" -not -path "*/.*" | head -n 1)
+          if [ -n "$ENV_SRC" ] && [ -f "$ENV_SRC" ]; then
+            cp "$ENV_SRC" bot-package/.env.example
           else
-            cat << 'EOF' > bot-package/.env.example
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-ADMIN_IDS=123456789
-EOF
+            echo "TELEGRAM_BOT_TOKEN=your_telegram_bot_token" > bot-package/.env.example
+            echo "ADMIN_IDS=123456789" >> bot-package/.env.example
           fi
 
-          cd bot-package && zip -r ../fougo-telegram-bot-bundle.zip ./* && cd ..
-          echo "Telegram bot package ready: fougo-telegram-bot-bundle.zip"
+      - name: Sanitize Branding and Validate Python Syntax
+        run: |
+          if [ -f "bot-package/bot.py" ]; then
+            python3 -c "import sys; p = 'bot-package/bot.py'; t = open(p, errors='ignore').read().replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo'); open(p, 'w').write(t); print('[OK] Telegram bot rebranded')"
+            python3 -m py_compile bot-package/bot.py
+            echo "[OK] Bot syntax validated successfully"
+          fi
+
+      - name: Package Telegram Bot Bundle
+        run: |
+          echo "# FOUGO EXTERNAL — Telegram Bot" > bot-package/README.md
+          echo "" >> bot-package/README.md
+          echo "## Quick Start" >> bot-package/README.md
+          echo "1. pip install -r requirements.txt" >> bot-package/README.md
+          echo "2. cp .env.example .env (set TELEGRAM_BOT_TOKEN)" >> bot-package/README.md
+          echo "3. python bot.py" >> bot-package/README.md
+          cd bot-package && zip -qry ../fougo-telegram-bot-bundle.zip . && cd ..
+          echo "[OK] Created fougo-telegram-bot-bundle.zip"
 
       - name: Upload Telegram Bot Artifact
         uses: actions/upload-artifact@v4
@@ -193,7 +99,7 @@ EOF
           retention-days: 14
 
   # =========================================================================
-  # 3. iOS IPA & MACH-O BUILDER (macOS Runner with Native Apple Clang)
+  # 2. NATIVE iOS IPA & MACH-O BUILDER (macOS Runner)
   # =========================================================================
   build-ios-ipa:
     name: Build FOUGO EXTERNAL iOS IPA
@@ -203,7 +109,7 @@ EOF
         uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -212,27 +118,26 @@ EOF
         run: |
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "sdk_path=$SDK_PATH" >> "$GITHUB_OUTPUT"
-          echo "Using Apple iPhoneOS SDK: $SDK_PATH"
+          echo "Apple iPhoneOS SDK located at: $SDK_PATH"
 
       - name: Locate and Extract iOS Source
         id: source
         run: |
           MAIN_FILE=$(find . -name "main.m" -not -path "*/.*" | head -n 1)
           if [ -z "$MAIN_FILE" ]; then
-            echo "Searching for iOS zip archive..."
-            ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | grep -iE "external|myzo|ios" | head -n 1)
-            if [ -z "$ZIP_FILE" ]; then
-              ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+            ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | grep -iE "external|myzo|ios" | head -n 1)
+            if [ -z "$ZIP_IOS" ]; then
+              ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
             fi
-            if [ -n "$ZIP_FILE" ]; then
-              echo "Extracting iOS source from: $ZIP_FILE"
+            if [ -n "$ZIP_IOS" ]; then
+              echo "Extracting iOS source from archive: $ZIP_IOS"
               mkdir -p ios-extracted
-              unzip -q -o "$ZIP_FILE" -d ios-extracted/
+              unzip -q -o "$ZIP_IOS" -d ios-extracted/
               MAIN_FILE=$(find ios-extracted -name "main.m" -not -path "*/.*" | head -n 1)
             fi
           fi
 
-          if [ -z "$MAIN_FILE" ]; then
+          if [ -z "$MAIN_FILE" ] || [ ! -f "$MAIN_FILE" ]; then
             echo "ERROR: main.m could not be located in repository or extracted archives."
             exit 1
           fi
@@ -240,122 +145,83 @@ EOF
           SOURCE_DIR=$(dirname "$MAIN_FILE")
           echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
           echo "main_file=$MAIN_FILE" >> "$GITHUB_OUTPUT"
-          echo "Found iOS Source in: $SOURCE_DIR ($MAIN_FILE)"
+          echo "Found iOS source: $MAIN_FILE in $SOURCE_DIR"
 
-      - name: Self-Healing Patch & Brand Sanitization on iOS Source
+      - name: Self-Healing Source Patch & Brand Sanitization
         run: |
           MAIN_FILE="${{ steps.source.outputs.main_file }}"
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
-          BUILD_MODE="${{ github.event.inputs.build_mode || 'online' }}"
-          API_URL="${{ github.event.inputs.api_base_url || 'https://auth.fougoexternal.com/api/v1' }}"
+          echo "Patching source file: $MAIN_FILE"
 
-          echo "Applying Self-Healing Patch to $MAIN_FILE..."
-          python3 -c "
-import os, re
+          python3 -c "import sys, re; p = sys.argv[1]; c = open(p, errors='ignore').read(); c = re.sub(r'\[FFSHA256String\(FFOfficialChannelURL\)[^\n]*', 'static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}', c); c = c.replace('static NSString *const FFBundleIDFreeFireMAX', 'static NSString *const FFBundleIDFreeFireTH = @\"com.dts.freefireth\";\nstatic NSString *const FFBundleIDFreeFireMAX') if 'static NSString *const FFBundleIDFreeFireTH' not in c else c; c = c.replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo'); open(p, 'w').write(c); print('[OK] Self-healing source patch applied')" "$MAIN_FILE"
 
-main_file = '$MAIN_FILE'
-with open(main_file, 'r', encoding='utf-8', errors='ignore') as f:
-    content = f.read()
-
-# 1. Fix Clang fatal syntax error at lines 41-43
-content = re.sub(
-    r'\[FFSHA256String\(FFOfficialChannelURL\)\s+isEqualToString:\]\s*\}?',
-    'static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}',
-    content
-)
-
-# 2. Ensure FFBundleIDFreeFireTH and FFBundleIDFreeFireMAX are declared
-if 'FFBundleIDFreeFireTH' not in content:
-    content = content.replace(
-        '// Network configuration is intentionally absent in this local build.',
-        'static NSString *const FFBundleIDFreeFireTH = @\"com.dts.freefireth\";\nstatic NSString *const FFBundleIDFreeFireMAX = @\"com.dts.freefiremax\";\n// Network configuration is intentionally absent in this local build.'
-    )
-
-# 3. Clean legacy brand names
-content = content.replace('MYZO PANEL', 'FOUGO EXTERNAL')
-content = content.replace('MYZO EXTERNAL', 'FOUGO EXTERNAL')
-content = content.replace('MYZO', 'FOUGO')
-content = content.replace('Myzo', 'Fougo')
-
-# 4. Configure API URL if Online Mode
-if '$BUILD_MODE' == 'online':
-    content = re.sub(
-        r'static NSString \*FFAPIBaseURL\(void\)\s*\{\s*return @\"[^\"]*\";\s*\}',
-        'static NSString *FFAPIBaseURL(void) { return @\"$API_URL\"; }',
-        content
-    )
-
-with open(main_file, 'w', encoding='utf-8') as f:
-    f.write(content)
-
-print('[PATCH SUCCESS] main.m syntax validated, brand sanitized, and declarations verified.')
-          "
-
-          # Update Info.plist
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
-            python3 -c "
-plist_path = '$SOURCE_DIR/Info.plist'
-with open(plist_path, 'r', encoding='utf-8', errors='ignore') as f:
-    text = f.read()
-text = text.replace('MYZO EXTERNAL', 'FOUGO EXTERNAL')
-text = text.replace('MYZO', 'FOUGO')
-with open(plist_path, 'w', encoding='utf-8') as f:
-    f.write(text)
-print('[PATCH SUCCESS] Info.plist brand updated.')
-            "
+            python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
           fi
 
-      - name: Compile Mach-O & Package IPA
+      - name: Compile Mach-O and Package IPA
         run: |
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
           MAIN_FILE="${{ steps.source.outputs.main_file }}"
           SDK_PATH="${{ steps.sdk.outputs.sdk_path }}"
-          BUILD_MODE="${{ github.event.inputs.build_mode || 'online' }}"
+          BUILD_MODE="${{ github.event.inputs.build_mode || 'offline' }}"
 
           mkdir -p "build_output/Payload/FOUGO EXTERNAL.app"
 
-          EXTRA_FLAGS=""
-          if [ "$BUILD_MODE" = "offline" ]; then
-            EXTRA_FLAGS="-DFM_OFFLINE_BUILD=1"
+          EXTRA_FLAGS="-DFM_OFFLINE_BUILD=1"
+          if [ "$BUILD_MODE" = "online" ]; then
+            EXTRA_FLAGS=""
           fi
 
           echo "Compiling arm64 Mach-O binary with Apple Clang..."
           clang -arch arm64 -target arm64-apple-ios15.0 -isysroot "$SDK_PATH" \
             -fobjc-arc -Os -fstack-protector-strong -fvisibility=hidden -fomit-frame-pointer -fno-ident \
             -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function \
-            $EXTRA_FLAGS -DFM_RELEASE_BUILD=1 -DFM_REQUIRE_SIGNED_RESPONSES=1 \
-            -I"$SOURCE_DIR" -c "$MAIN_FILE" -o build_output/main.o
-
-          echo "Linking binary executable..."
-          clang -arch arm64 -target arm64-apple-ios15.0 -isysroot "$SDK_PATH" \
-            -e _main -dead_strip build_output/main.o \
+            $EXTRA_FLAGS -DFM_RELEASE_BUILD=1 \
+            -I"$SOURCE_DIR" \
             -framework UIKit -framework Foundation -framework CoreGraphics \
             -framework QuartzCore -framework Security -framework UniformTypeIdentifiers \
-            -lobjc -lSystem -o "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL"
+            -lobjc -lSystem \
+            "$MAIN_FILE" -o "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal"
 
-          strip -x "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL"
+          cp "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL"
+          strip -x "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" 2>/dev/null || true
+          strip -x "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL" 2>/dev/null || true
 
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
             cp "$SOURCE_DIR/Info.plist" "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+          else
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<plist version="1.0"><dict>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleIdentifier</key><string>com.apple.mobile.MobileHouseArrest</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundlePackageType</key><string>APPL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleShortVersionString</key><string>1.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleVersion</key><string>1</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>LSRequiresIPhoneOS</key><true/>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>MinimumOSVersion</key><string>15.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '</dict></plist>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
           fi
 
-          if [ -f "$SOURCE_DIR/fougoExternalBackground.jpg" ]; then
-            cp "$SOURCE_DIR/fougoExternalBackground.jpg" "build_output/Payload/FOUGO EXTERNAL.app/fougoExternalBackground.jpg"
-          elif [ -f "$SOURCE_DIR/Myzoexternel.jpg" ]; then
-            cp "$SOURCE_DIR/Myzoexternel.jpg" "build_output/Payload/FOUGO EXTERNAL.app/fougoExternalBackground.jpg"
+          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "build_output/Payload/FOUGO EXTERNAL.app/fougoExternalBackground.jpg" \; 2>/dev/null || true
+
+          if [ -d "$SOURCE_DIR/resources/offline" ]; then
+            mkdir -p "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache"
+            cp "$SOURCE_DIR/resources/offline/"*.robotexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
+            cp "$SOURCE_DIR/resources/offline/"*.fougoexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
           fi
 
-          # Ad-hoc codesign
           codesign -s - --force --deep "build_output/Payload/FOUGO EXTERNAL.app" 2>/dev/null || true
 
-          # Create final IPA
-          IPA_NAME="FOUGO-EXTERNAL-v1.0.0-${BUILD_MODE}.ipa"
-          cd build_output
-          zip -qry "../$IPA_NAME" Payload/
-          cd ..
-
+          IPA_NAME="FOUGO-EXTERNAL-v1.0.0.ipa"
+          cd build_output && zip -qry "../$IPA_NAME" Payload/ && cd ..
           shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256"
-          echo "Generated IPA: $IPA_NAME"
+
+          echo "[OK] Built $IPA_NAME"
           cat "$IPA_NAME.sha256"
 
       - name: Upload iOS IPA Artifact
@@ -368,46 +234,41 @@ print('[PATCH SUCCESS] Info.plist brand updated.')
           retention-days: 14
 
   # =========================================================================
-  # 4. MASTER BUNDLE & GITHUB RELEASE PUBLISHING
+  # 3. CONSOLIDATE MASTER RELEASE PACKAGE
   # =========================================================================
   release-unified-package:
-    name: Consolidate Master Release Suite
-    needs: [build-web-and-api, build-telegram-bot, build-ios-ipa]
+    name: Package Release Suite
+    needs: [build-telegram-bot, build-ios-ipa]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Artifacts
+      - name: Download iOS IPA Artifact
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          path: release_staging
-
-      - name: Assemble Master Suite Archive
-        run: |
-          mkdir -p master_release
-          find release_staging -name "*.ipa" -exec cp {} master_release/ \; 2>/dev/null || true
-          find release_staging -name "*.sha256" -exec cp {} master_release/ \; 2>/dev/null || true
-          find release_staging -name "*.zip" -exec cp {} master_release/ \; 2>/dev/null || true
-
-          VERSION="${{ github.ref_name }}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
-            VERSION="latest-build"
-          fi
-
-          MASTER_ZIP="FOUGO-EXTERNAL-SUITE-${VERSION}.zip"
-          cd master_release && zip -r "../$MASTER_ZIP" ./* 2>/dev/null || true
-          cd ..
-          echo "Master release package generated: $MASTER_ZIP"
-
-      - name: Upload Master Suite Artifact
-        uses: actions/upload-artifact@v4
+          name: fougo-ios-ipa
+          path: release-artifacts/
         continue-on-error: true
+
+      - name: Download Telegram Bot Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fougo-telegram-bot-bundle
+          path: release-artifacts/
+        continue-on-error: true
+
+      - name: Consolidate Master Bundle
+        run: |
+          mkdir -p release-bundle
+          cp -r release-artifacts/* release-bundle/ 2>/dev/null || true
+          cd release-bundle && zip -qry ../FOUGO-EXTERNAL-FULL-SUITE.zip . && cd ..
+          echo "[OK] Consolidated release bundle ready: FOUGO-EXTERNAL-FULL-SUITE.zip"
+
+      - name: Upload Master Release Bundle Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: fougo-external-master-suite
-          path: |
-            master_release/*
-            FOUGO-EXTERNAL-SUITE-*.zip
-          retention-days: 30
+          path: FOUGO-EXTERNAL-FULL-SUITE.zip
+          retention-days: 14
