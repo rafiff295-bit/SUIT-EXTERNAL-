@@ -1,0 +1,62 @@
+name: Run FOUGO Telegram Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      bot_token:
+        description: 'Telegram Bot Token (Optional if set in Secrets)'
+        required: false
+        type: string
+      admin_ids:
+        description: 'Telegram Admin IDs comma separated (Optional)'
+        required: false
+        type: string
+
+jobs:
+  run-bot:
+    name: Run Telegram Bot Host
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Locate and Extract Bot
+        run: |
+          mkdir -p bot-runner
+          BOT_ZIP=$(find . -maxdepth 2 -name "*.zip" | grep -iE "telegram|bot|panel" | head -n 1)
+          if [ -n "$BOT_ZIP" ]; then
+            unzip -q -o "$BOT_ZIP" -d bot-runner/
+          fi
+          BOT_SRC=$(find . -name "bot.py" -not -path "./bot-runner/*" -not -path "*/.*" | head -n 1)
+          if [ -n "$BOT_SRC" ] && [ -f "$BOT_SRC" ]; then
+            cp "$BOT_SRC" bot-runner/bot.py
+          fi
+          REQ_SRC=$(find . -name "requirements.txt" -not -path "./bot-runner/*" -not -path "*/.*" | head -n 1)
+          if [ -n "$REQ_SRC" ] && [ -f "$REQ_SRC" ]; then
+            cp "$REQ_SRC" bot-runner/requirements.txt
+          else
+            echo "python-telegram-bot==21.10" > bot-runner/requirements.txt
+          fi
+
+      - name: Install Dependencies
+        run: |
+          pip install --no-cache-dir -r bot-runner/requirements.txt
+
+      - name: Launch Bot Process
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ github.event.inputs.bot_token || secrets.TELEGRAM_BOT_TOKEN }}
+          ADMIN_IDS: ${{ github.event.inputs.admin_ids || secrets.ADMIN_IDS }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "ERROR: TELEGRAM_BOT_TOKEN is not provided! Please provide it in workflow inputs or repository secrets."
+            exit 1
+          fi
+          echo "[OK] Starting FOUGO Telegram Bot..."
+          cd bot-runner
+          python3 -c "import sys; p = 'bot.py'; t = open(p, errors='ignore').read().replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo'); open(p, 'w').write(t)"
+          python3 bot.py
