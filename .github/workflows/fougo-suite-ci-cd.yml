@@ -1,4 +1,4 @@
-name: FOUGO EXTERNAL Suite CI/CD & Bot Host
+name: FOUGO EXTERNAL Suite — iOS IPA & Telegram Bot
 
 on:
   push:
@@ -21,12 +21,12 @@ on:
           - 'build-ios-ipa'
           - 'run-telegram-bot'
       telegram_bot_token:
-        description: 'Telegram BotFather Token (Optional if set in GitHub Secrets: TELEGRAM_BOT_TOKEN)'
+        description: 'Telegram BotFather Token (e.g. 123456789:ABCdef...)'
         required: false
         default: ''
         type: string
       admin_ids:
-        description: 'Admin Telegram User IDs (Optional, comma-separated)'
+        description: 'Admin Telegram User IDs (comma-separated, e.g. 123456789)'
         required: false
         default: ''
         type: string
@@ -45,7 +45,147 @@ permissions:
 
 jobs:
   # =========================================================================
-  # 1. TELEGRAM MANAGEMENT BOT PACKAGING & LIVE RUNNER
+  # 1. NATIVE iOS IPA & MACH-O BUILDER (Apple Clang on macOS Runner)
+  # =========================================================================
+  build-ios-ipa:
+    name: Build FOUGO EXTERNAL iOS IPA
+    runs-on: macos-14
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'build-ios-ipa'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Locate Apple iPhoneOS SDK
+        id: sdk
+        run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "sdk_path=$SDK_PATH" >> "$GITHUB_OUTPUT"
+          echo "Apple iPhoneOS SDK located at: $SDK_PATH"
+
+      - name: Locate and Extract iOS Source
+        id: source
+        run: |
+          MAIN_FILE=$(find . -name "main.m" -not -path "*/.*" | head -n 1)
+          if [ -z "$MAIN_FILE" ]; then
+            ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | grep -iE "external|myzo|ios" | head -n 1)
+            if [ -z "$ZIP_IOS" ]; then
+              ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+            fi
+            if [ -n "$ZIP_IOS" ]; then
+              echo "Extracting iOS source from archive: $ZIP_IOS"
+              mkdir -p ios-extracted
+              unzip -q -o "$ZIP_IOS" -d ios-extracted/
+              MAIN_FILE=$(find ios-extracted -name "main.m" -not -path "*/.*" | head -n 1)
+            fi
+          fi
+
+          if [ -z "$MAIN_FILE" ] || [ ! -f "$MAIN_FILE" ]; then
+            echo "ERROR: main.m could not be located in repository or extracted archives."
+            exit 1
+          fi
+
+          SOURCE_DIR=$(dirname "$MAIN_FILE")
+          echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
+          echo "main_file=$MAIN_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found iOS source: $MAIN_FILE in $SOURCE_DIR"
+
+      - name: Self-Healing Source Patch & Brand Sanitization
+        run: |
+          MAIN_FILE="${{ steps.source.outputs.main_file }}"
+          SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
+          echo "Patching source file: $MAIN_FILE"
+
+          if [ -f "scripts/patch_fougo.py" ]; then
+            python3 scripts/patch_fougo.py "$MAIN_FILE"
+          else
+            echo "aW1wb3J0IHN5cywgb3MsIHJlCgpkZWYgbWFpbigpOgogICAgaWYgbGVuKHN5cy5hcmd2KSA8IDI6CiAgICAgICAgcHJpbnQoIltXQVJOXSBObyBtYWluLm0gcGF0aCBwcm92aWRlZCIpCiAgICAgICAgcmV0dXJuCiAgICBtYWluX2ZpbGUgPSBzeXMuYXJndlsxXQogICAgaWYgbm90IG9zLnBhdGguZXhpc3RzKG1haW5fZmlsZSk6CiAgICAgICAgcHJpbnQoZiJbV0FSTl0gRmlsZSBkb2VzIG5vdCBleGlzdDoge21haW5fZmlsZX0iKQogICAgICAgIHJldHVybgoKICAgIHdpdGggb3BlbihtYWluX2ZpbGUsICJyIiwgZW5jb2Rpbmc9InV0Zi04IiwgZXJyb3JzPSJpZ25vcmUiKSBhcyBmOgogICAgICAgIGMgPSBmLnJlYWQoKQoKICAgICMgMS4gQ2xlYW5seSBub3JtYWxpemUgRkZCcmFuZElkZW50aXR5SXNWYWxpZCBhbmQgZWxpbWluYXRlIGV4dHJhbmVvdXMgY2xvc2luZyBicmFjZSAoJ30nKQogICAgY2xlYW5fYnJhbmRfZnVuYyA9ICJzdGF0aWMgQk9PTCBGRkJyYW5kSWRlbnRpdHlJc1ZhbGlkKHZvaWQpIHtcbiAgICByZXR1cm4gWUVTO1xufVxuXG4iCiAgICBjID0gcmUuc3ViKAogICAgICAgIHIic3RhdGljXHMrQk9PTFxzK0ZGQnJhbmRJZGVudGl0eUlzVmFsaWRccypcKFteKV0qXClccypce1tcc1xTXSo/KD89c3RhdGljXHMrTlNTdHJpbmdccypcKkZGQVBJQmFzZVVSTCkiLAogICAgICAgIGNsZWFuX2JyYW5kX2Z1bmMsCiAgICAgICAgYwogICAgKQoKICAgICMgMi4gRml4IHVuZGVjbGFyZWQgaWRlbnRpZmllciAnZ29qb0ltYWdlJyAtPiAnZm91Z29JbWFnZScKICAgIGMgPSBjLnJlcGxhY2UoImdvam9JbWFnZSIsICJmb3Vnb0ltYWdlIikKCiAgICAjIDMuIEVuc3VyZSBGRk93bmVyVGVsZWdyYW0gaXMgZGVjbGFyZWQKICAgIGlmICJGRk93bmVyVGVsZWdyYW0iIG5vdCBpbiBjOgogICAgICAgIG93bmVyX3N0ciA9ICdzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT3duZXJUZWxlZ3JhbSA9IEAiQGNoZWF0Z25leHVzaXBob25lIjtcbicKICAgICAgICBpZiAic3RhdGljIE5TU3RyaW5nICpjb25zdCBGRk9mZmljaWFsQ2hhbm5lbFVSTCIgaW4gYzoKICAgICAgICAgICAgYyA9IGMucmVwbGFjZSgKICAgICAgICAgICAgICAgICJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT2ZmaWNpYWxDaGFubmVsVVJMIiwKICAgICAgICAgICAgICAgIG93bmVyX3N0ciArICJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT2ZmaWNpYWxDaGFubmVsVVJMIgogICAgICAgICAgICApCiAgICAgICAgZWxzZToKICAgICAgICAgICAgYyA9IG93bmVyX3N0ciArIGMKCiAgICAjIDQuIEVuc3VyZSBGRk9mZmljaWFsQ2hhbm5lbFVSTCBpcyBkZWNsYXJlZAogICAgaWYgIkZGT2ZmaWNpYWxDaGFubmVsVVJMIiBub3QgaW4gYzoKICAgICAgICBjaGFuX3N0ciA9ICdzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT2ZmaWNpYWxDaGFubmVsVVJMID0gQCJodHRwczovL3QubWUvY2hlYXRnbmV4dXNpcGhvbmUiO1xuJwogICAgICAgIGlmICJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT3duZXJUZWxlZ3JhbSIgaW4gYzoKICAgICAgICAgICAgYyA9IGMucmVwbGFjZSgKICAgICAgICAgICAgICAgICJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT3duZXJUZWxlZ3JhbSIsCiAgICAgICAgICAgICAgICBjaGFuX3N0ciArICJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT3duZXJUZWxlZ3JhbSIKICAgICAgICAgICAgKQogICAgICAgIGVsc2U6CiAgICAgICAgICAgIGMgPSBjaGFuX3N0ciArIGMKCiAgICAjIDUuIEVuc3VyZSBGRkJ1bmRsZUlERnJlZUZpcmVUSCBpcyBkZWNsYXJlZAogICAgaWYgIkZGQnVuZGxlSURGcmVlRmlyZVRIIiBub3QgaW4gYzoKICAgICAgICB0aF9zdHIgPSAnc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkJ1bmRsZUlERnJlZUZpcmVUSCA9IEAiY29tLmR0cy5mcmVlZmlyZXRoIjtcbicKICAgICAgICBpZiAic3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkJ1bmRsZUlERnJlZUZpcmVNQVgiIGluIGM6CiAgICAgICAgICAgIGMgPSBjLnJlcGxhY2UoCiAgICAgICAgICAgICAgICAic3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkJ1bmRsZUlERnJlZUZpcmVNQVgiLAogICAgICAgICAgICAgICAgdGhfc3RyICsgInN0YXRpYyBOU1N0cmluZyAqY29uc3QgRkZCdW5kbGVJREZyZWVGaXJlTUFYIgogICAgICAgICAgICApCiAgICAgICAgZWxzZToKICAgICAgICAgICAgYyA9IHRoX3N0ciArIGMKCiAgICAjIDYuIFNhbml0aXplIGJyYW5kIG5hbWVzCiAgICBjID0gYy5yZXBsYWNlKCJNWVpPIFBBTkVMIiwgIkZPVUdPIEVYVEVSTkFMIikKICAgIGMgPSBjLnJlcGxhY2UoIk1ZWk8gRVhURVJOQUwiLCAiRk9VR08gRVhURVJOQUwiKQogICAgYyA9IGMucmVwbGFjZSgiTVlaTyIsICJGT1VHTyIpCiAgICBjID0gYy5yZXBsYWNlKCJNeXpvIiwgIkZvdWdvIikKCiAgICB3aXRoIG9wZW4obWFpbl9maWxlLCAidyIsIGVuY29kaW5nPSJ1dGYtOCIpIGFzIGY6CiAgICAgICAgZi53cml0ZShjKQoKICAgIHByaW50KGYiW09LXSBTZWxmLWhlYWxpbmcgc291cmNlIHBhdGNoIGFwcGxpZWQgc3VjY2Vzc2Z1bGx5IHRvIHttYWluX2ZpbGV9IikKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBtYWluKCkK" | base64 -d | python3 - "$MAIN_FILE"
+          fi
+
+          if [ -f "$SOURCE_DIR/Info.plist" ]; then
+            python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
+          fi
+
+      - name: Compile Mach-O and Package IPA
+        run: |
+          SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
+          MAIN_FILE="${{ steps.source.outputs.main_file }}"
+          SDK_PATH="${{ steps.sdk.outputs.sdk_path }}"
+          BUILD_MODE="${{ github.event.inputs.build_mode || 'offline' }}"
+
+          mkdir -p "build_output/Payload/FOUGO EXTERNAL.app"
+
+          EXTRA_FLAGS="-DFM_OFFLINE_BUILD=1"
+          if [ "$BUILD_MODE" = "online" ]; then
+            EXTRA_FLAGS=""
+          fi
+
+          echo "Compiling arm64 Mach-O binary with Apple Clang..."
+          clang -arch arm64 -target arm64-apple-ios15.0 -isysroot "$SDK_PATH" \
+            -fobjc-arc -Os -fstack-protector-strong -fvisibility=hidden -fomit-frame-pointer -fno-ident \
+            -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function \
+            $EXTRA_FLAGS -DFM_RELEASE_BUILD=1 \
+            -I"$SOURCE_DIR" \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
+            -framework QuartzCore -framework Security -framework UniformTypeIdentifiers \
+            -lobjc -lSystem \
+            "$MAIN_FILE" -o "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal"
+
+          cp "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL"
+          strip -x "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" 2>/dev/null || true
+          strip -x "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL" 2>/dev/null || true
+
+          if [ -f "$SOURCE_DIR/Info.plist" ]; then
+            cp "$SOURCE_DIR/Info.plist" "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+          else
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<plist version="1.0"><dict>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleIdentifier</key><string>com.apple.mobile.MobileHouseArrest</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundlePackageType</key><string>APPL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleShortVersionString</key><string>1.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>CFBundleVersion</key><string>1</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>LSRequiresIPhoneOS</key><true/>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>MinimumOSVersion</key><string>15.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '</dict></plist>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+          fi
+
+          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "build_output/Payload/FOUGO EXTERNAL.app/fougoExternalBackground.jpg" \; 2>/dev/null || true
+
+          if [ -d "$SOURCE_DIR/resources/offline" ]; then
+            mkdir -p "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache"
+            cp "$SOURCE_DIR/resources/offline/"*.robotexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
+            cp "$SOURCE_DIR/resources/offline/"*.fougoexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
+          fi
+
+          codesign -s - --force --deep "build_output/Payload/FOUGO EXTERNAL.app" 2>/dev/null || true
+
+          IPA_NAME="FOUGO-EXTERNAL-v1.0.0.ipa"
+          cd build_output && zip -qry "../$IPA_NAME" Payload/ && cd ..
+          shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256"
+
+          echo "[OK] Built $IPA_NAME"
+          cat "$IPA_NAME.sha256"
+
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fougo-ios-ipa
+          path: |
+            FOUGO-EXTERNAL-*.ipa
+            FOUGO-EXTERNAL-*.sha256
+          retention-days: 14
+
+  # =========================================================================
+  # 2. TELEGRAM MANAGEMENT BOT PACKAGING & LIVE HOST (Ubuntu Runner)
   # =========================================================================
   fougo-telegram-bot:
     name: Telegram Bot Package & Live Host
@@ -129,209 +269,47 @@ jobs:
 
       - name: Launch & Run Telegram Bot Polling Host
         run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+          # 1. Resolve Bot Token from Env or Repo Files
+          RESOLVED_TOKEN="$TELEGRAM_BOT_TOKEN"
+          if [ -z "$RESOLVED_TOKEN" ]; then
+            if [ -f ".env" ]; then
+              RESOLVED_TOKEN=$(grep -E "^TELEGRAM_BOT_TOKEN=" .env | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')
+            fi
+          fi
+
+          if [ -z "$RESOLVED_TOKEN" ]; then
             echo "======================================================================"
-            echo "INFO: TELEGRAM_BOT_TOKEN is not set."
-            echo "Bot package has been built and uploaded to GitHub Artifacts."
-            echo "To keep the Telegram bot ONLINE on GitHub Actions:"
-            echo "1. Go to repository Settings -> Secrets and variables -> Actions"
-            echo "2. Add 'TELEGRAM_BOT_TOKEN' secret with your BotFather token."
-            echo "3. Trigger this workflow with target 'run-telegram-bot' or 'all'."
+            echo "⚠️ [ATTENTION] TELEGRAM_BOT_TOKEN IS NOT CONFIGURED YET"
+            echo "======================================================================"
+            echo "Your Telegram Bot Bundle has been successfully packaged & uploaded to Artifacts!"
+            echo ""
+            echo "To make the Telegram Bot LIVE & ONLINE on GitHub Actions:"
+            echo "Option 1 (Recommended):"
+            echo "  1. Go to repository 'Settings' -> 'Secrets and variables' -> 'Actions'"
+            echo "  2. Click 'New repository secret'"
+            echo "  3. Name: TELEGRAM_BOT_TOKEN"
+            echo "  4. Secret: Paste your BotFather token (e.g. 123456789:ABCdef...)"
+            echo "  5. Re-run workflow."
+            echo ""
+            echo "Option 2 (Manual Run):"
+            echo "  Run workflow manually with 'Run workflow' and enter your token into the"
+            echo "  'telegram_bot_token' input box."
             echo "======================================================================"
             exit 0
           fi
 
           echo "======================================================================"
-          echo "TELEGRAM_BOT_TOKEN detected! Verifying bot identity with Telegram..."
-          BOT_INFO=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")
-          echo "Telegram API Response: $BOT_INFO"
+          echo "🟢 TELEGRAM_BOT_TOKEN DETECTED! Verifying connection with Telegram..."
+          BOT_INFO=$(curl -s "https://api.telegram.org/bot${RESOLVED_TOKEN}/getMe")
+          echo "Telegram Response: $BOT_INFO"
           echo "======================================================================"
 
-          echo "[ONLINE] Fougo Telegram Bot is starting polling daemon..."
+          export TELEGRAM_BOT_TOKEN="$RESOLVED_TOKEN"
           cd bot-package
+          echo "🟢 [ONLINE] FOUGO Telegram Bot is now polling 24/7..."
           while true; do
             echo "[$(date -u)] Running python3 bot.py..."
             python3 bot.py || true
             echo "[$(date -u)] Process exited. Restarting in 5s..."
             sleep 5
           done
-
-  # =========================================================================
-  # 2. NATIVE iOS IPA & MACH-O BUILDER (macOS Runner)
-  # =========================================================================
-  build-ios-ipa:
-    name: Build FOUGO EXTERNAL iOS IPA
-    runs-on: macos-14
-    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'build-ios-ipa'
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Locate Apple iPhoneOS SDK
-        id: sdk
-        run: |
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "sdk_path=$SDK_PATH" >> "$GITHUB_OUTPUT"
-          echo "Apple iPhoneOS SDK located at: $SDK_PATH"
-
-      - name: Locate and Extract iOS Source
-        id: source
-        run: |
-          MAIN_FILE=$(find . -name "main.m" -not -path "*/.*" | head -n 1)
-          if [ -z "$MAIN_FILE" ]; then
-            ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | grep -iE "external|myzo|ios" | head -n 1)
-            if [ -z "$ZIP_IOS" ]; then
-              ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
-            fi
-            if [ -n "$ZIP_IOS" ]; then
-              echo "Extracting iOS source from archive: $ZIP_IOS"
-              mkdir -p ios-extracted
-              unzip -q -o "$ZIP_IOS" -d ios-extracted/
-              MAIN_FILE=$(find ios-extracted -name "main.m" -not -path "*/.*" | head -n 1)
-            fi
-          fi
-
-          if [ -z "$MAIN_FILE" ] || [ ! -f "$MAIN_FILE" ]; then
-            echo "ERROR: main.m could not be located in repository or extracted archives."
-            exit 1
-          fi
-
-          SOURCE_DIR=$(dirname "$MAIN_FILE")
-          echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
-          echo "main_file=$MAIN_FILE" >> "$GITHUB_OUTPUT"
-          echo "Found iOS source: $MAIN_FILE in $SOURCE_DIR"
-
-      - name: Self-Healing Source Patch & Brand Sanitization
-        run: |
-          MAIN_FILE="${{ steps.source.outputs.main_file }}"
-          SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
-          echo "Patching source file: $MAIN_FILE"
-
-          if [ -f "scripts/patch_fougo.py" ]; then
-            python3 scripts/patch_fougo.py "$MAIN_FILE"
-          else
-            echo "aW1wb3J0IHN5cywgb3MsIHJlCgpkZWYgbWFpbigpOgogICAgaWYgbGVuKHN5cy5hcmd2KSA8IDI6CiAgICAgICAgcHJpbnQoIltXQVJOXSBObyBtYWluLm0gcGF0aCBwcm92aWRlZCIpCiAgICAgICAgcmV0dXJuCiAgICBtYWluX2ZpbGUgPSBzeXMuYXJndlsxXQogICAgaWYgbm90IG9zLnBhdGguZXhpc3RzKG1haW5fZmlsZSk6CiAgICAgICAgcHJpbnQoZiJbV0FSTl0gRmlsZSBkb2VzIG5vdCBleGlzdDoge21haW5fZmlsZX0iKQogICAgICAgIHJldHVybgoKICAgIHdpdGggb3BlbihtYWluX2ZpbGUsICJyIiwgZW5jb2Rpbmc9InV0Zi04IiwgZXJyb3JzPSJpZ25vcmUiKSBhcyBmOgogICAgICAgIGMgPSBmLnJlYWQoKQoKICAgICMgMS4gQ2xlYW5seSBub3JtYWxpemUgRkZCcmFuZElkZW50aXR5SXNWYWxpZCBhbmQgZWxpbWluYXRlIGV4dHJhbmVvdXMgY2xvc2luZyBicmFjZSAoJ30nKQogICAgY2xlYW5fYnJhbmRfZnVuYyA9ICJzdGF0aWMgQk9PTCBGRkJyYW5kSWRlbnRpdHlJc1ZhbGlkKHZvaWQpIHtcbiAgICByZXR1cm4gWUVTO1xufVxuXG4iCiAgICBjID0gcmUuc3ViKAogICAgICAgIHIic3RhdGljXHMrQk9PTFxzK0ZGQnJhbmRJZGVudGl0eUlzVmFsaWRccypcKFteKV0qXClccypce1tcc1xTXSo/KD89c3RhdGljXHMrTlNTdHJpbmdccypcKkZGQVBJQmFzZVVSTCkiLAogICAgICAgIGNsZWFuX2JyYW5kX2Z1bmMsCiAgICAgICAgYwogICAgKQoKICAgICMgMi4gRml4IHVuZGVjbGFyZWQgaWRlbnRpZmllciAnZ29qb0ltYWdlJyAtPiAnZm91Z29JbWFnZScKICAgIGMgPSBjLnJlcGxhY2UoImdvam9JbWFnZSIsICJmb3Vnb0ltYWdlIikKCiAgICAjIDMuIEVuc3VyZSBGRk93bmVyVGVsZWdyYW0gaXMgZGVjbGFyZWQKICAgIGlmICJGRk93bmVyVGVsZWdyYW0iIG5vdCBpbiBjOgogICAgICAgIG93bmVyX2RlY2wgPSAnc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRk93bmVyVGVsZWdyYW0gPSBAIkBjaGVhdGduZXh1c2lwaG9uZSI7XG4nCiAgICAgICAgaWYgIkZGT2ZmaWNpYWxDaGFubmVsVVJMIiBpbiBjOgogICAgICAgICAgICBjID0gYy5yZXBsYWNlKCJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT2ZmaWNpYWxDaGFubmVsVVJMIiwgb3duZXJfZGVjbCArICJzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT2ZmaWNpYWxDaGFubmVsVVJMIikKICAgIGVsc2U6CiAgICAgICAgYyA9IG93bmVyX2RlY2wgKyBjCgojIDQuIEVuc3VyZSBGRk9mZmljaWFsQ2hhbm5lbFVSTCBpcyBkZWNsYXJlZAogICAgaWYgIkZGT2ZmaWNpYWxDaGFubmVsVVJMIiBub3QgaW4gYzoKICAgICAgICBjID0gJ3N0YXRpYyBOU1N0cmluZyAqY29uc3QgRkZPZmZpY2lhbENoYW5uZWxVUkwgPSBAImh0dHBzOi8vdC5tZS9jaGVhdGduZXh1c2lwaG9uZSI7XG4nICsgYwoKICAgICMgNS4gRW5zdXJlIEZGQnVuZGxlSURGcmVlRmlyZVRIIGlzIGRlY2xhcmVkCiAgICBpZiAiRkZCdW5kbGVJREZyZWVGaXJlVEgiIG5vdCBpbiBjOgogICAgICAgIGMgPSBjLnJlcGxhY2UoCiAgICAgICAgICAgICdzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGQnVuZGxlSURGcmVlRmlyZU1BWCcsCiAgICAgICAgICAgICdzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGQnVuZGxlSURGcmVlRmlyZVRIID0gQCJjb20uZHRzLmZyZWVmaXJldGgiO1xuc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkJ1bmRsZUlERnJlZUZpcmVNQVgnCiAgICAgICAgKQoKICAgICMgNi4gU2FuaXRpemUgYnJhbmQgbmFtZXMKICAgIGMgPSBjLnJlcGxhY2UoIk1ZWk8gUEFORUwiLCAiRk9VR08gRVhURVJOQUwiKQogICAgYyA9IGMucmVwbGFjZSgiTVlaTyBFWFRFUk5BTCIsICJGT1VHTyBFWFRFUk5BTCIpCiAgICBjID0gYy5yZXBsYWNlKCJNWVpPIiwgIkZPVUdPIikKICAgIGMgPSBjLnJlcGxhY2UoIk15em8iLCAiRm91Z28iKQoKICAgIHdpdGggb3BlbihtYWluX2ZpbGUsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IikgYXMgZjoKICAgICAgICBmLndyaXRlKGMpCgogICAgcHJpbnQoZiJbT0tdIFNlbGYtaGVhbGluZyBzb3VyY2UgcGF0Y2ggYXBwbGllZCBzdWNjZXNzZnVsbHkgdG8ge21haW5fZmlsZX0iKQoKaWYgX19uYW1lX18gPT0gIl9fbWFpbl9fIjoKICAgIG1haW4oKQo=" | base64 -d | python3 - "$MAIN_FILE"
-          fi
-
-          if [ -f "$SOURCE_DIR/Info.plist" ]; then
-            python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
-          fi
-
-      - name: Compile Mach-O and Package IPA
-        run: |
-          SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
-          MAIN_FILE="${{ steps.source.outputs.main_file }}"
-          SDK_PATH="${{ steps.sdk.outputs.sdk_path }}"
-          BUILD_MODE="${{ github.event.inputs.build_mode || 'offline' }}"
-
-          mkdir -p "build_output/Payload/FOUGO EXTERNAL.app"
-
-          EXTRA_FLAGS="-DFM_OFFLINE_BUILD=1"
-          if [ "$BUILD_MODE" = "online" ]; then
-            EXTRA_FLAGS=""
-          fi
-
-          echo "Compiling arm64 Mach-O binary with Apple Clang..."
-          clang -arch arm64 -target arm64-apple-ios15.0 -isysroot "$SDK_PATH" \
-            -fobjc-arc -Os -fstack-protector-strong -fvisibility=hidden -fomit-frame-pointer -fno-ident \
-            -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function \
-            $EXTRA_FLAGS -DFM_RELEASE_BUILD=1 \
-            -I"$SOURCE_DIR" \
-            -framework UIKit -framework Foundation -framework CoreGraphics \
-            -framework QuartzCore -framework Security -framework UniformTypeIdentifiers \
-            -lobjc -lSystem \
-            "$MAIN_FILE" -o "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal"
-
-          cp "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL"
-          strip -x "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" 2>/dev/null || true
-          strip -x "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL" 2>/dev/null || true
-
-          if [ -f "$SOURCE_DIR/Info.plist" ]; then
-            cp "$SOURCE_DIR/Info.plist" "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-          else
-            echo '<?xml version="1.0" encoding="UTF-8"?>' > "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<plist version="1.0"><dict>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleIdentifier</key><string>com.apple.mobile.MobileHouseArrest</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundlePackageType</key><string>APPL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleShortVersionString</key><string>1.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleVersion</key><string>1</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>LSRequiresIPhoneOS</key><true/>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>MinimumOSVersion</key><string>15.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '</dict></plist>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-          fi
-
-          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "build_output/Payload/FOUGO EXTERNAL.app/fougoExternalBackground.jpg" \; 2>/dev/null || true
-
-          if [ -d "$SOURCE_DIR/resources/offline" ]; then
-            mkdir -p "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache"
-            cp "$SOURCE_DIR/resources/offline/"*.robotexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
-            cp "$SOURCE_DIR/resources/offline/"*.fougoexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
-          fi
-
-          codesign -s - --force --deep "build_output/Payload/FOUGO EXTERNAL.app" 2>/dev/null || true
-
-          IPA_NAME="FOUGO-EXTERNAL-v1.0.0.ipa"
-          cd build_output && zip -qry "../$IPA_NAME" Payload/ && cd ..
-          shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256"
-
-          echo "[OK] Built $IPA_NAME"
-          cat "$IPA_NAME.sha256"
-
-      - name: Upload iOS IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fougo-ios-ipa
-          path: |
-            FOUGO-EXTERNAL-*.ipa
-            FOUGO-EXTERNAL-*.sha256
-          retention-days: 14
-
-  # =========================================================================
-  # 3. CONSOLIDATE MASTER RELEASE PACKAGE
-  # =========================================================================
-  release-unified-package:
-    name: Package Release Suite
-    needs: [fougo-telegram-bot, build-ios-ipa]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Download iOS IPA Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: fougo-ios-ipa
-          path: release-artifacts/
-        continue-on-error: true
-
-      - name: Download Telegram Bot Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: fougo-telegram-bot-bundle
-          path: release-artifacts/
-        continue-on-error: true
-
-      - name: Consolidate Master Bundle
-        run: |
-          mkdir -p release-bundle
-          cp -r release-artifacts/* release-bundle/ 2>/dev/null || true
-          cd release-bundle && zip -qry ../FOUGO-EXTERNAL-FULL-SUITE.zip . && cd ..
-          echo "[OK] Consolidated release bundle ready: FOUGO-EXTERNAL-FULL-SUITE.zip"
-
-      - name: Upload Master Release Bundle Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fougo-external-master-suite
-          path: FOUGO-EXTERNAL-FULL-SUITE.zip
-          retention-days: 14
