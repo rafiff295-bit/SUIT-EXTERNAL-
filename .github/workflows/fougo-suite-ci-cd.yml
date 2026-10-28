@@ -1,4 +1,4 @@
-name: FOUGO EXTERNAL Suite CI/CD
+name: FOUGO EXTERNAL Suite CI/CD & Bot Host
 
 on:
   push:
@@ -11,8 +11,27 @@ on:
       - master
   workflow_dispatch:
     inputs:
+      target:
+        description: 'What to run (all, build-ios-ipa, or run-telegram-bot)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'build-ios-ipa'
+          - 'run-telegram-bot'
+      telegram_bot_token:
+        description: 'Telegram BotFather Token (Optional if set in GitHub Secrets: TELEGRAM_BOT_TOKEN)'
+        required: false
+        default: ''
+        type: string
+      admin_ids:
+        description: 'Admin Telegram User IDs (Optional, comma-separated)'
+        required: false
+        default: ''
+        type: string
       build_mode:
-        description: 'Build Mode (offline or online)'
+        description: 'IPA Build Mode (offline or online)'
         required: true
         default: 'offline'
         type: choice
@@ -26,11 +45,16 @@ permissions:
 
 jobs:
   # =========================================================================
-  # 1. TELEGRAM MANAGEMENT BOT PACKAGING & VALIDATION
+  # 1. TELEGRAM MANAGEMENT BOT PACKAGING & LIVE RUNNER
   # =========================================================================
-  build-telegram-bot:
-    name: Build Telegram Management Bot
+  fougo-telegram-bot:
+    name: Telegram Bot Package & Live Host
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'run-telegram-bot'
+    timeout-minutes: 360
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ inputs.telegram_bot_token || secrets.TELEGRAM_BOT_TOKEN }}
+      ADMIN_IDS: ${{ inputs.admin_ids || secrets.ADMIN_IDS }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -68,17 +92,28 @@ jobs:
           if [ -n "$ENV_SRC" ] && [ -f "$ENV_SRC" ]; then
             cp "$ENV_SRC" bot-package/.env.example
           else
-            echo "TELEGRAM_BOT_TOKEN=your_telegram_bot_token" > bot-package/.env.example
-            echo "ADMIN_IDS=123456789" >> bot-package/.env.example
+            echo 'TELEGRAM_BOT_TOKEN="your_telegram_bot_token"' > bot-package/.env.example
+            echo 'ADMIN_IDS="123456789"' >> bot-package/.env.example
           fi
 
-      - name: Sanitize Branding and Validate Python Syntax
+      - name: Sanitize Branding and Install Bot Dependencies
         run: |
           if [ -f "bot-package/bot.py" ]; then
-            python3 -c "import sys; p = 'bot-package/bot.py'; t = open(p, errors='ignore').read().replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo'); open(p, 'w').write(t); print('[OK] Telegram bot rebranded')"
+            python3 - << 'EOF'
+import sys
+p = 'bot-package/bot.py'
+t = open(p, errors='ignore').read()
+t = t.replace('MYZO PANEL', 'FOUGO EXTERNAL')
+t = t.replace('MYZO EXTERNAL', 'FOUGO EXTERNAL')
+t = t.replace('MYZO', 'FOUGO')
+t = t.replace('Myzo', 'Fougo')
+open(p, 'w').write(t)
+print('[OK] Telegram bot rebranded')
+EOF
             python3 -m py_compile bot-package/bot.py
             echo "[OK] Bot syntax validated successfully"
           fi
+          pip install --no-cache-dir -r bot-package/requirements.txt
 
       - name: Package Telegram Bot Bundle
         run: |
@@ -98,12 +133,42 @@ jobs:
           path: fougo-telegram-bot-bundle.zip
           retention-days: 14
 
+      - name: Launch & Run Telegram Bot Polling Host
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "======================================================================"
+            echo "INFO: TELEGRAM_BOT_TOKEN is not set."
+            echo "Bot package has been built and uploaded to GitHub Artifacts."
+            echo "To keep the Telegram bot ONLINE on GitHub Actions:"
+            echo "1. Go to repository Settings -> Secrets and variables -> Actions"
+            echo "2. Add 'TELEGRAM_BOT_TOKEN' secret with your BotFather token."
+            echo "3. Trigger this workflow with target 'run-telegram-bot' or 'all'."
+            echo "======================================================================"
+            exit 0
+          fi
+
+          echo "======================================================================"
+          echo "TELEGRAM_BOT_TOKEN detected! Verifying bot identity with Telegram..."
+          BOT_INFO=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")
+          echo "Telegram API Response: $BOT_INFO"
+          echo "======================================================================"
+
+          echo "[ONLINE] Fougo Telegram Bot is starting polling daemon..."
+          cd bot-package
+          while true; do
+            echo "[$(date -u)] Running python3 bot.py..."
+            python3 bot.py || true
+            echo "[$(date -u)] Process exited. Restarting in 5s..."
+            sleep 5
+          done
+
   # =========================================================================
   # 2. NATIVE iOS IPA & MACH-O BUILDER (macOS Runner)
   # =========================================================================
   build-ios-ipa:
     name: Build FOUGO EXTERNAL iOS IPA
     runs-on: macos-14
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'build-ios-ipa'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -153,7 +218,60 @@ jobs:
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
           echo "Patching source file: $MAIN_FILE"
 
-          python3 -c "import sys, re; p = sys.argv[1]; c = open(p, errors='ignore').read(); c = re.sub(r'\[FFSHA256String\(FFOfficialChannelURL\)[^\n]*', 'static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}', c); c = c.replace('static NSString *const FFBundleIDFreeFireMAX', 'static NSString *const FFBundleIDFreeFireTH = @\"com.dts.freefireth\";\nstatic NSString *const FFBundleIDFreeFireMAX') if 'static NSString *const FFBundleIDFreeFireTH' not in c else c; c = (c.replace('static NSString *const FFOfficialChannelURL', 'static NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";\nstatic NSString *const FFOfficialChannelURL') if 'static NSString *const FFOfficialChannelURL' in c else 'static NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";\n' + c) if 'static NSString *const FFOwnerTelegram' not in c else c; c = ('static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";\n' + c) if 'static NSString *const FFOfficialChannelURL' not in c else c; c = c.replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo'); open(p, 'w').write(c); print('[OK] Self-healing source patch applied')" "$MAIN_FILE"
+          python3 - << 'EOF'
+import sys, os, re
+
+main_file = "${{ steps.source.outputs.main_file }}"
+if not os.path.exists(main_file):
+    print("File not found:", main_file)
+    sys.exit(1)
+
+with open(main_file, "r", encoding="utf-8", errors="ignore") as f:
+    c = f.read()
+
+# 1. Cleanly normalize FFBrandIdentityIsValid and eliminate extraneous closing brace ('}')
+# Match from 'static BOOL FFBrandIdentityIsValid' until 'static NSString *FFAPIBaseURL'
+c = re.sub(
+    r'static\s+BOOL\s+FFBrandIdentityIsValid\s*\([^)]*\)\s*\{[\s\S]*?(?=static\s+NSString\s*\*FFAPIBaseURL)',
+    'static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}\n\n',
+    c
+)
+# Fallback cleanup for any dangling braces after FFBrandIdentityIsValid
+c = re.sub(
+    r'(static\s+BOOL\s+FFBrandIdentityIsValid\s*\([^)]*\)\s*\{[^\}]*\})[\s;\}]+',
+    r'\1\n\n',
+    c
+)
+
+# 2. Fix undeclared identifier 'gojoImage' -> 'fougoImage'
+c = c.replace('gojoImage', 'fougoImage')
+
+# 3. Ensure FFOwnerTelegram is declared
+if 'FFOwnerTelegram' not in c:
+    if 'FFOfficialChannelURL' in c:
+        c = c.replace('static NSString *const FFOfficialChannelURL', 'static NSString *const FFOwnerTelegram = @"@cheatgnexusiphone";\nstatic NSString *const FFOfficialChannelURL')
+    else:
+        c = 'static NSString *const FFOwnerTelegram = @"@cheatgnexusiphone";\n' + c
+
+# 4. Ensure FFOfficialChannelURL is declared
+if 'FFOfficialChannelURL' not in c:
+    c = 'static NSString *const FFOfficialChannelURL = @"https://t.me/cheatgnexusiphone";\n' + c
+
+# 5. Ensure FFBundleIDFreeFireTH is declared
+if 'FFBundleIDFreeFireTH' not in c:
+    c = c.replace('static NSString *const FFBundleIDFreeFireMAX', 'static NSString *const FFBundleIDFreeFireTH = @"com.dts.freefireth";\nstatic NSString *const FFBundleIDFreeFireMAX')
+
+# 6. Sanitize brand names
+c = c.replace('MYZO PANEL', 'FOUGO EXTERNAL')
+c = c.replace('MYZO EXTERNAL', 'FOUGO EXTERNAL')
+c = c.replace('MYZO', 'FOUGO')
+c = c.replace('Myzo', 'Fougo')
+
+with open(main_file, "w", encoding="utf-8") as f:
+    f.write(c)
+
+print("[OK] Successfully applied self-healing patch to", main_file)
+EOF
 
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
             python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
@@ -238,7 +356,7 @@ jobs:
   # =========================================================================
   release-unified-package:
     name: Package Release Suite
-    needs: [build-telegram-bot, build-ios-ipa]
+    needs: [fougo-telegram-bot, build-ios-ipa]
     runs-on: ubuntu-latest
     if: always()
     steps:
