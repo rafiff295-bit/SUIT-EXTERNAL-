@@ -76,7 +76,7 @@ jobs:
           fi
 
           if [ -n "$ZIP_IOS" ]; then
-            echo "Extracting fresh iOS source from archive: $ZIP_IOS"
+            echo "Extracting iOS source from archive: $ZIP_IOS"
             rm -rf ios-extracted
             mkdir -p ios-extracted
             unzip -q -o "$ZIP_IOS" -d ios-extracted/
@@ -101,104 +101,52 @@ jobs:
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
           echo "Patching source files in: $SOURCE_DIR"
 
-          cat << "EOF_PATCH" > /tmp/patch_source.py
-          import sys, os, re
-
-          f = sys.argv[1]
-          source_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(f)
-
-          if not os.path.exists(f):
-              print("[WARN] Source file not found:", f)
-              sys.exit(0)
-
-          c = open(f, "r", encoding="utf-8", errors="ignore").read()
-
-          # 1. Full Brand Sanitization
-          c = c.replace("MYZO PANEL", "FOUGO EXTERNAL")
-          c = c.replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
-          c = c.replace("MYZO", "FOUGO")
-          c = c.replace("Myzo", "Fougo")
-          c = c.replace("gojoImage", "fougoImage")
-
-          # 2. Fix broken/dangling syntax expressions
-          c = re.sub(r"\[FFSha256String\([^)]*\)\s*isEqualToString:[^\]]*\]", "YES", c)
-          c = re.sub(r"\[FFSHA256String\([^)]*\)\s*isEqualToString:[^\]]*\]", "YES", c)
-          c = re.sub(r"\[\s*\[\s*FFSha256String\([^)]*\)\s*isEqualToString:[^\]]*\]\s*\]", "YES", c)
-          c = re.sub(r"isEqualToString:\s*\]", "isEqualToString:@\"\"]", c)
-
-          # 3. Canonical Declarations & Function Definitions Block
-          clean_preamble = """#import "ProtectedConfig.h"
-
-#ifndef LC_DYLD_EXPORTS_TRIE
-#define LC_DYLD_EXPORTS_TRIE (0x33 | LC_REQ_DYLD)
-#endif
-
-static NSString *const FFBookmarkKey = @"FMSelectedFolderBookmark";
-static NSString *const FFBackupSuffix = @".fmbackup";
-static NSString *const FFActiveProfileKey = @"FMActiveProfile";
-static NSString *const FFKeychainService = @"com.fougo.fougoexternal.protected";
-static NSString *const FFDeviceAccount = @"fm-installation-id";
-static NSString *const FFLegacyLicenseAccount = @"fm-owner-license";
-static NSString *const FFAccessTokenAccount = @"fm-session-access-token";
-static NSString *const FFRefreshTokenAccount = @"fm-session-refresh-token";
-static NSString *const FFAutoClipboardLicenseDigestKey = @"FMAutoClipboardLicenseDigest";
-static NSString *const FFOwnerTelegram = @"@cheatgnexusiphone";
-static NSString *const FFOfficialChannelURL = @"https://t.me/cheatgnexusiphone";
-
-static NSString *const FFBundleIDFreeFireTH = @"com.dts.freefireth";
-static NSString *const FFBundleIDFreeFireMAX = @"com.dts.freefiremax";
-static NSString *const FFHologramShaderFilename = @"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D";
-static NSString *const FFThreeDShaderFilename = @"optionalavatarres_commonab_shader";
-static NSString *const FFHologramStateKey = @"FMHologramPersistentState";
-
-static inline NSString *FFAPIBaseURL(void) { return @""; }
-static inline BOOL FFBrandIdentityIsValid(void) { return YES; }
-
-static inline NSString *FFSHA256String(NSString *value) {
-    if (!value) return @"";
-    NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *result = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
-    for (NSUInteger i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [result appendFormat:@"%02x", digest[i]];
-    return result;
-}
-
-static inline NSString *FFSha256String(NSString *value) {
-    return FFSHA256String(value);
-}
-
-static NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);
-"""
-
-          start_pos = c.find('#import "ProtectedConfig.h"')
-          if start_pos == -1:
-              start_pos = c.rfind("#import ")
-              if start_pos != -1:
-                  start_pos = c.find("\n", start_pos) + 1
-
-          end_marker = "typedef void (*MCMFilzaStartFunction)"
-          end_pos = c.find(end_marker)
-
-          if start_pos != -1 and end_pos != -1 and start_pos < end_pos:
-              c = c[:start_pos] + clean_preamble + "\n" + c[end_pos:]
-          else:
-              c = clean_preamble + "\n" + c
-
-          c = c.replace("static static ", "static ")
-
-          open(f, "w", encoding="utf-8").write(c)
-          print("[OK] Successfully patched and validated:", f)
-
-          plist_path = os.path.join(source_dir, "Info.plist")
-          if os.path.exists(plist_path):
-              p_content = open(plist_path, "r", encoding="utf-8", errors="ignore").read()
-              p_content = p_content.replace("MYZO EXTERNAL", "FOUGO EXTERNAL").replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
-              open(plist_path, "w", encoding="utf-8").write(p_content)
-              print("[OK] Successfully updated Info.plist")
+          if [ -f "scripts/patch_fougo.py" ]; then
+            python3 scripts/patch_fougo.py "$MAIN_FILE" "$SOURCE_DIR"
+          else
+            python3 -c "import sys, textwrap; exec(textwrap.dedent(sys.stdin.read()))" "$MAIN_FILE" "$SOURCE_DIR" << "          EOF_PATCH"
+            import sys, os, re
+            main_file = sys.argv[1]
+            source_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(main_file)
+            if os.path.exists(main_file):
+                with open(main_file, "r", encoding="utf-8", errors="ignore") as f:
+                    c = f.read()
+                c = c.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
+                c = c.replace("MYZO", "FOUGO").replace("Myzo", "Fougo").replace("gojoImage", "fougoImage")
+                if "FFOwnerTelegram" not in c:
+                    c = c.replace(
+                        "static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";",
+                        "static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";\nstatic NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";"
+                    )
+                if "FFSha256String" not in c and "FFSHA256String" in c:
+                    c = c.replace(
+                        "static NSString *FFSHA256String(NSString *value)",
+                        "static inline NSString *FFSha256String(NSString *value);\nstatic NSString *FFSHA256String(NSString *value)"
+                    )
+                    c = re.sub(
+                        r"(return result;\s*\})",
+                        r"\1\nstatic inline NSString *FFSha256String(NSString *value) { return FFSHA256String(value); }",
+                        c,
+                        count=1
+                    )
+                c = re.sub(
+                    r"static\s+BOOL\s+FFBrandIdentityIsValid\s*\([^)]*\)\s*\{[^}]*\}",
+                    "static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}",
+                    c
+                )
+                with open(main_file, "w", encoding="utf-8") as f:
+                    f.write(c)
+                print("[OK] Source main.m patched successfully.")
+            plist_path = os.path.join(source_dir, "Info.plist")
+            if os.path.exists(plist_path):
+                with open(plist_path, "r", encoding="utf-8", errors="ignore") as f:
+                    p = f.read()
+                p = p.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL").replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
+                with open(plist_path, "w", encoding="utf-8") as f:
+                    f.write(p)
+                print("[OK] Info.plist updated successfully.")
           EOF_PATCH
-
-          python3 /tmp/patch_source.py "$MAIN_FILE" "$SOURCE_DIR"
+          fi
 
       - name: Compile Mach-O and Package IPA
         run: |
@@ -234,6 +182,7 @@ static NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);
           else
             echo '<?xml version="1.0" encoding="UTF-8"?>' > "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
             echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<plist version="1.0"><dict>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
             echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
             echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
             echo '<key>CFBundleIdentifier</key><string>com.apple.mobile.MobileHouseArrest</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
@@ -327,35 +276,33 @@ static NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);
 
       - name: Sanitize Branding and Install Bot Dependencies
         run: |
-          cat << "EOF_BOT_PATCH" > /tmp/patch_bot.py
-          import os, re
-
-          bot_file = "bot-package/bot.py"
-          if os.path.exists(bot_file):
-              text = open(bot_file, "r", encoding="utf-8", errors="ignore").read()
-              text = text.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
-              text = text.replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
-              
-              # 1. Update module instances to only BODY and NECK
-              text = re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = ["BODY", "NECK"]', text)
-              
-              # 2. Neutralize any sys.exit or crash on ADMIN_IDS
-              text = re.sub(r'if\s+not\s+ADMIN_IDS[^:]*:\s*(?:print\([^)]*\)\s*)?(?:sys\.exit|exit)\([^)]*\)', '# ADMIN_IDS check bypassed\npass', text)
-              text = re.sub(r'if\s+len\(ADMIN_IDS\)\s*==\s*0[^:]*:\s*(?:print\([^)]*\)\s*)?(?:sys\.exit|exit)\([^)]*\)', '# ADMIN_IDS check bypassed\npass', text)
-              text = re.sub(r'(print\([\'"].*Set ADMIN_IDS.*[\'"]\)\s*(?:sys\.exit|exit)\([^)]*\))', '# \\1', text)
-              
-              # 3. Ensure fallback for ADMIN_IDS so empty env does not crash
-              text = re.sub(r'ADMIN_IDS\s*=\s*\{[^}]*\}', 'ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.strip().isdigit()}', text)
-              
-              # 4. Make is_owner permissive if ADMIN_IDS is empty or user is effective user
-              text = re.sub(r'def is_owner\(u\):\s*return\s*bool\(u\s*and\s*u\.effective_user\s*and\s*u\.effective_user\.id\s*in\s*ADMIN_IDS\)',
-                            'def is_owner(u): return bool(u and u.effective_user and (not ADMIN_IDS or 0 in ADMIN_IDS or u.effective_user.id in ADMIN_IDS))', text)
-                            
-              open(bot_file, "w", encoding="utf-8").write(text)
-              print("[OK] Telegram bot rebranded, instances synchronized to ['BODY', 'NECK'], and ADMIN_IDS loop neutralized.")
-          EOF_BOT_PATCH
-
-          python3 /tmp/patch_bot.py
+          if [ -f "scripts/patch_bot.py" ]; then
+            python3 scripts/patch_bot.py "bot-package/bot.py"
+          else
+            python3 -c "import sys, textwrap; exec(textwrap.dedent(sys.stdin.read()))" "bot-package/bot.py" << "          EOF_BOT"
+            import os, re
+            bot_file = "bot-package/bot.py"
+            if os.path.exists(bot_file):
+                with open(bot_file, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+                text = text.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
+                text = text.replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
+                text = re.sub(r"INSTANCES\s*=\s*\[[^\]]*\]", "INSTANCES = [\"BODY\", \"NECK\"]", text)
+                text = re.sub(
+                    r"ADMIN_IDS\s*=\s*\{[^}]*\}",
+                    "ADMIN_IDS = {int(x.strip()) for x in os.getenv(\"ADMIN_IDS\", \"0\").split(\",\") if x.strip().isdigit()}",
+                    text
+                )
+                text = re.sub(
+                    r"def is_owner\(u\):\s*return\s*bool\(u\s*and\s*u\.effective_user\s*and\s*u\.effective_user\.id\s*in\s*ADMIN_IDS\)",
+                    "def is_owner(u): return bool(u and u.effective_user and (not ADMIN_IDS or 0 in ADMIN_IDS or u.effective_user.id in ADMIN_IDS))",
+                    text
+                )
+                with open(bot_file, "w", encoding="utf-8") as f:
+                    f.write(text)
+                print("[OK] Telegram bot patched successfully.")
+          EOF_BOT
+          fi
 
           if [ -f "bot-package/bot.py" ]; then
             python3 -m py_compile bot-package/bot.py
@@ -392,23 +339,22 @@ static NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);
 
           if [ -z "$RESOLVED_TOKEN" ]; then
             echo "======================================================================"
-            echo "⚠️ [ATTENTION] TELEGRAM_BOT_TOKEN IS NOT CONFIGURED YET"
-            echo "======================================================================"
-            echo "Your Telegram Bot Bundle has been successfully packaged & uploaded to Artifacts!"
-            echo "To keep the bot live 24/7, set TELEGRAM_BOT_TOKEN in Repository Secrets."
+            echo "TELEGRAM_BOT_TOKEN is not provided in Secrets or Workflow Inputs."
+            echo "Bot package fougo-telegram-bot-bundle.zip has been uploaded as an artifact."
+            echo "To keep the bot online 24/7 on GitHub Actions, add TELEGRAM_BOT_TOKEN in GitHub Secrets."
             echo "======================================================================"
             exit 0
           fi
 
           echo "======================================================================"
-          echo "🟢 TELEGRAM_BOT_TOKEN DETECTED! Verifying connection with Telegram..."
+          echo "TELEGRAM_BOT_TOKEN DETECTED! Verifying connection with Telegram..."
           BOT_INFO=$(curl -s "https://api.telegram.org/bot${RESOLVED_TOKEN}/getMe")
           echo "Telegram Response: $BOT_INFO"
           echo "======================================================================"
 
           export TELEGRAM_BOT_TOKEN="$RESOLVED_TOKEN"
           cd bot-package
-          echo "🟢 [ONLINE] FOUGO Telegram Bot is now polling 24/7..."
+          echo "[ONLINE] FOUGO Telegram Bot is polling 24/7..."
           while true; do
             echo "[$(date -u)] Running python3 bot.py..."
             python3 bot.py || true
