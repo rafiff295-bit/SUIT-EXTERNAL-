@@ -101,52 +101,9 @@ jobs:
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
           echo "Patching source files in: $SOURCE_DIR"
 
-          if [ -f "scripts/patch_fougo.py" ]; then
-            python3 scripts/patch_fougo.py "$MAIN_FILE" "$SOURCE_DIR"
-          else
-            python3 -c "import sys, textwrap; exec(textwrap.dedent(sys.stdin.read()))" "$MAIN_FILE" "$SOURCE_DIR" << "          EOF_PATCH"
-            import sys, os, re
-            main_file = sys.argv[1]
-            source_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(main_file)
-            if os.path.exists(main_file):
-                with open(main_file, "r", encoding="utf-8", errors="ignore") as f:
-                    c = f.read()
-                c = c.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
-                c = c.replace("MYZO", "FOUGO").replace("Myzo", "Fougo").replace("gojoImage", "fougoImage")
-                if "FFOwnerTelegram" not in c:
-                    c = c.replace(
-                        "static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";",
-                        "static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";\nstatic NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";"
-                    )
-                if "FFSha256String" not in c and "FFSHA256String" in c:
-                    c = c.replace(
-                        "static NSString *FFSHA256String(NSString *value)",
-                        "static inline NSString *FFSha256String(NSString *value);\nstatic NSString *FFSHA256String(NSString *value)"
-                    )
-                    c = re.sub(
-                        r"(return result;\s*\})",
-                        r"\1\nstatic inline NSString *FFSha256String(NSString *value) { return FFSHA256String(value); }",
-                        c,
-                        count=1
-                    )
-                c = re.sub(
-                    r"static\s+BOOL\s+FFBrandIdentityIsValid\s*\([^)]*\)\s*\{[^}]*\}",
-                    "static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}",
-                    c
-                )
-                with open(main_file, "w", encoding="utf-8") as f:
-                    f.write(c)
-                print("[OK] Source main.m patched successfully.")
-            plist_path = os.path.join(source_dir, "Info.plist")
-            if os.path.exists(plist_path):
-                with open(plist_path, "r", encoding="utf-8", errors="ignore") as f:
-                    p = f.read()
-                p = p.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL").replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
-                with open(plist_path, "w", encoding="utf-8") as f:
-                    f.write(p)
-                print("[OK] Info.plist updated successfully.")
-          EOF_PATCH
-          fi
+          python3 -c "import sys, re, os; f=sys.argv[1]; c=open(f, encoding='utf-8', errors='ignore').read(); c=c.replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo').replace('gojoImage','fougoImage'); c=(c if 'FFOwnerTelegram' in c else c.replace('static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";', 'static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";\nstatic NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";')); c=(c if 'FFSha256String' in c else c.replace('static NSString *FFSHA256String(NSString *value)', 'static inline NSString *FFSha256String(NSString *value);\nstatic NSString *FFSHA256String(NSString *value)').replace('return result;\n}', 'return result;\n}\nstatic inline NSString *FFSha256String(NSString *value) { return FFSHA256String(value); }')); open(f, 'w', encoding='utf-8').write(c); print('[OK] Source main.m patched successfully.')" "$MAIN_FILE"
+
+          python3 -c "import sys, os; d=sys.argv[1]; p=os.path.join(d, 'Info.plist'); (open(p, 'w', encoding='utf-8').write(open(p, encoding='utf-8', errors='ignore').read().replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo')) if os.path.exists(p) else None); print('[OK] Info.plist updated successfully.')" "$SOURCE_DIR"
 
       - name: Compile Mach-O and Package IPA
         run: |
@@ -276,33 +233,7 @@ jobs:
 
       - name: Sanitize Branding and Install Bot Dependencies
         run: |
-          if [ -f "scripts/patch_bot.py" ]; then
-            python3 scripts/patch_bot.py "bot-package/bot.py"
-          else
-            python3 -c "import sys, textwrap; exec(textwrap.dedent(sys.stdin.read()))" "bot-package/bot.py" << "          EOF_BOT"
-            import os, re
-            bot_file = "bot-package/bot.py"
-            if os.path.exists(bot_file):
-                with open(bot_file, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()
-                text = text.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
-                text = text.replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
-                text = re.sub(r"INSTANCES\s*=\s*\[[^\]]*\]", "INSTANCES = [\"BODY\", \"NECK\"]", text)
-                text = re.sub(
-                    r"ADMIN_IDS\s*=\s*\{[^}]*\}",
-                    "ADMIN_IDS = {int(x.strip()) for x in os.getenv(\"ADMIN_IDS\", \"0\").split(\",\") if x.strip().isdigit()}",
-                    text
-                )
-                text = re.sub(
-                    r"def is_owner\(u\):\s*return\s*bool\(u\s*and\s*u\.effective_user\s*and\s*u\.effective_user\.id\s*in\s*ADMIN_IDS\)",
-                    "def is_owner(u): return bool(u and u.effective_user and (not ADMIN_IDS or 0 in ADMIN_IDS or u.effective_user.id in ADMIN_IDS))",
-                    text
-                )
-                with open(bot_file, "w", encoding="utf-8") as f:
-                    f.write(text)
-                print("[OK] Telegram bot patched successfully.")
-          EOF_BOT
-          fi
+          python3 -c "import os, re; f='bot-package/bot.py'; (None if not os.path.exists(f) else (lambda t: open(f, 'w', encoding='utf-8').write(re.sub(r'def is_owner\(u\):\s*return\s*bool\(u\s*and\s*u\.effective_user\s*and\s*u\.effective_user\.id\s*in\s*ADMIN_IDS\)', 'def is_owner(u): return bool(u and u.effective_user and (not ADMIN_IDS or 0 in ADMIN_IDS or u.effective_user.id in ADMIN_IDS))', re.sub(r'ADMIN_IDS\s*=\s*\{[^}]*\}', 'ADMIN_IDS = {int(x.strip()) for x in os.getenv(\"ADMIN_IDS\", \"0\").split(\",\") if x.strip().isdigit()}', re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = [\"BODY\", \"NECK\"]', t.replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo'))))))(open(f, encoding='utf-8', errors='ignore').read())); print('[OK] Telegram bot patched successfully.')"
 
           if [ -f "bot-package/bot.py" ]; then
             python3 -m py_compile bot-package/bot.py
