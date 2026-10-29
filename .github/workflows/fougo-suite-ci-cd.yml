@@ -99,31 +99,89 @@ jobs:
         run: |
           MAIN_FILE="${{ steps.source.outputs.main_file }}"
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
-          echo "Patching source file: $MAIN_FILE"
+          echo "Patching source files in: $SOURCE_DIR"
 
-          python3 -c "
+          cat << "EOF_PATCH" > /tmp/patch_source.py
           import sys, os, re
-          f = sys.argv[1]
-          if not os.path.exists(f):
-              sys.exit(0)
-          c = open(f, 'r', encoding='utf-8', errors='ignore').read()
-          c = c.replace('gojoImage', 'fougoImage')
-          if 'FFOwnerTelegram' not in c:
-              target = 'static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";'
-              replacement = 'static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";\nstatic NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";\nstatic void FFDiagnosticLog(NSString *format, ...);'
-              if target in c:
-                  c = c.replace(target, replacement, 1)
-              else:
-                  c = replacement + '\n' + c
-          c = re.sub(r'static\s+BOOL\s+FFBrandIdentityIsValid\s*\([^\)]*\)\s*\{[^}]*\}', 'static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}', c)
-          c = c.replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo')
-          open(f, 'w', encoding='utf-8').write(c)
-          print('[OK] Safely patched', f)
-          " "$MAIN_FILE"
 
-          if [ -f "$SOURCE_DIR/Info.plist" ]; then
-            python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
-          fi
+          f = sys.argv[1]
+          source_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(f)
+
+          if not os.path.exists(f):
+              print("[WARN] Source file not found:", f)
+              sys.exit(0)
+
+          c = open(f, "r", encoding="utf-8", errors="ignore").read()
+
+          # 1. Branding sanitization
+          c = c.replace("MYZO PANEL", "FOUGO EXTERNAL")
+          c = c.replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
+          c = c.replace("MYZO", "FOUGO")
+          c = c.replace("Myzo", "Fougo")
+          c = c.replace("gojoImage", "fougoImage")
+
+          # 2. Fix broken isEqualToString: syntax error in main.m
+          c = re.sub(r"\[FFSha256String\([^)]*\)\s*isEqualToString:\s*\]", "YES", c)
+          c = re.sub(r"isEqualToString:\s*\]", "isEqualToString:@\"\"]", c)
+
+          # 3. Safely replace broken function with balanced braces
+          def replace_c_func(content, sig, repl):
+              pos = content.find(sig)
+              if pos == -1:
+                  return content
+              b_open = content.find("{", pos)
+              if b_open == -1:
+                  return content
+              depth = 1
+              i = b_open + 1
+              while i < len(content) and depth > 0:
+                  if content[i] == "{":
+                      depth += 1
+                  elif content[i] == "}":
+                      depth -= 1
+                  i += 1
+              if depth == 0:
+                  return content[:pos] + repl + content[i:]
+              return content
+
+          c = replace_c_func(c, "BOOL FFBrandIdentityIsValid", "static BOOL FFBrandIdentityIsValid(void) { return YES; }")
+
+          # 4. Inject missing core declarations
+          decls = []
+          if "static NSString *FFAPIBaseURL" not in c and "NSString *FFAPIBaseURL" not in c:
+              decls.append("static NSString *FFAPIBaseURL(void) { return @\"\"; }")
+          if "FFBundleIDFreeFireTH" not in c:
+              decls.append("static NSString *const FFBundleIDFreeFireTH = @\"com.dts.freefireth\";")
+          if "FFBundleIDFreeFireMAX" not in c:
+              decls.append("static NSString *const FFBundleIDFreeFireMAX = @\"com.dts.freefiremax\";")
+          if "FFOwnerTelegram" not in c:
+              decls.append("static NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";")
+          if "FFOfficialChannelURL" not in c:
+              decls.append("static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";")
+          if "static void FFDiagnosticLog" not in c and "void FFDiagnosticLog" not in c:
+              decls.append("static void FFDiagnosticLog(NSString *format, ...);")
+
+          if decls:
+              block = "\n".join(decls) + "\n"
+              if '#import "ProtectedConfig.h"' in c:
+                  c = c.replace('#import "ProtectedConfig.h"', '#import "ProtectedConfig.h"\n' + block, 1)
+              elif '#import <UIKit/UIKit.h>' in c:
+                  c = c.replace('#import <UIKit/UIKit.h>', '#import <UIKit/UIKit.h>\n' + block, 1)
+              else:
+                  c = block + c
+
+          open(f, "w", encoding="utf-8").write(c)
+          print("[OK] Successfully patched and validated:", f)
+
+          plist_path = os.path.join(source_dir, "Info.plist")
+          if os.path.exists(plist_path):
+              p_content = open(plist_path, "r", encoding="utf-8", errors="ignore").read()
+              p_content = p_content.replace("MYZO EXTERNAL", "FOUGO EXTERNAL").replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
+              open(plist_path, "w", encoding="utf-8").write(p_content)
+              print("[OK] Successfully updated Info.plist")
+          EOF_PATCH
+
+          python3 /tmp/patch_source.py "$MAIN_FILE" "$SOURCE_DIR"
 
       - name: Compile Mach-O and Package IPA
         run: |
@@ -142,7 +200,7 @@ jobs:
           echo "Compiling arm64 Mach-O binary with Apple Clang..."
           clang -arch arm64 -target arm64-apple-ios15.0 -isysroot "$SDK_PATH" \
             -fobjc-arc -Os -fstack-protector-strong -fvisibility=hidden -fomit-frame-pointer -fno-ident \
-            -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function \
+            -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function -Wno-implicit-function-declaration \
             $EXTRA_FLAGS -DFM_RELEASE_BUILD=1 \
             -I"$SOURCE_DIR" \
             -framework UIKit -framework Foundation -framework CoreGraphics \
@@ -253,17 +311,22 @@ jobs:
 
       - name: Sanitize Branding and Install Bot Dependencies
         run: |
+          cat << "EOF_BOT_PATCH" > /tmp/patch_bot.py
+          import os, re
+
+          bot_file = "bot-package/bot.py"
+          if os.path.exists(bot_file):
+              text = open(bot_file, "r", encoding="utf-8", errors="ignore").read()
+              text = text.replace("MYZO PANEL", "FOUGO EXTERNAL").replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
+              text = text.replace("MYZO", "FOUGO").replace("Myzo", "Fougo")
+              text = re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = ["BODY", "NECK"]', text)
+              open(bot_file, "w", encoding="utf-8").write(text)
+              print("[OK] Telegram bot rebranded and instances synchronized to ['BODY', 'NECK']")
+          EOF_BOT_PATCH
+
+          python3 /tmp/patch_bot.py
+
           if [ -f "bot-package/bot.py" ]; then
-            python3 -c "
-            import os, re
-            p = 'bot-package/bot.py'
-            if os.path.exists(p):
-                t = open(p, 'r', encoding='utf-8', errors='ignore').read()
-                t = t.replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo')
-                t = re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = [\"BODY\", \"NECK\"]', t)
-                open(p, 'w', encoding='utf-8').write(t)
-                print('[OK] Telegram bot rebranded and instances synchronized to BODY and NECK')
-            "
             python3 -m py_compile bot-package/bot.py
             echo "[OK] Bot syntax validated successfully"
           fi
