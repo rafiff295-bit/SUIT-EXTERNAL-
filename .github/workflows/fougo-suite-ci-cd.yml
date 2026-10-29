@@ -70,18 +70,19 @@ jobs:
       - name: Locate and Extract iOS Source
         id: source
         run: |
-          MAIN_FILE=$(find . -name "main.m" -not -path "*/.*" | head -n 1)
-          if [ -z "$MAIN_FILE" ]; then
-            ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | grep -iE "external|myzo|ios" | head -n 1)
-            if [ -z "$ZIP_IOS" ]; then
-              ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
-            fi
-            if [ -n "$ZIP_IOS" ]; then
-              echo "Extracting iOS source from archive: $ZIP_IOS"
-              mkdir -p ios-extracted
-              unzip -q -o "$ZIP_IOS" -d ios-extracted/
-              MAIN_FILE=$(find ios-extracted -name "main.m" -not -path "*/.*" | head -n 1)
-            fi
+          ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | grep -iE "external|myzo|ios" | head -n 1)
+          if [ -z "$ZIP_IOS" ]; then
+            ZIP_IOS=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          fi
+
+          if [ -n "$ZIP_IOS" ]; then
+            echo "Extracting fresh iOS source from archive: $ZIP_IOS"
+            rm -rf ios-extracted
+            mkdir -p ios-extracted
+            unzip -q -o "$ZIP_IOS" -d ios-extracted/
+            MAIN_FILE=$(find ios-extracted -name "main.m" -not -path "*/.*" | head -n 1)
+          else
+            MAIN_FILE=$(find . -name "main.m" -not -path "*/.*" | head -n 1)
           fi
 
           if [ -z "$MAIN_FILE" ] || [ ! -f "$MAIN_FILE" ]; then
@@ -100,62 +101,25 @@ jobs:
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
           echo "Patching source file: $MAIN_FILE"
 
-          python3 - "$MAIN_FILE" << 'EOF_PYTHON'
+          python3 -c "
           import sys, os, re
-
-          main_file = sys.argv[1]
-          if not os.path.exists(main_file):
-              print(f"[WARN] File does not exist: {main_file}")
+          f = sys.argv[1]
+          if not os.path.exists(f):
               sys.exit(0)
-
-          with open(main_file, "r", encoding="utf-8", errors="ignore") as f:
-              c = f.read()
-
-          c = c.replace("gojoImage", "fougoImage")
-          c = c.replace("MYZO PANEL", "FOUGO EXTERNAL")
-          c = c.replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
-          c = c.replace("MYZO", "FOUGO")
-          c = c.replace("Myzo", "Fougo")
-
-          patterns = [
-              r"static\s+BOOL\s+FFBrandIdentityIsValid[^{]*\{[^}]*\}(\s*\})?",
-              r"static\s+NSString\s*\*FFAPIBaseURL[^{]*\{[^}]*\}",
-              r"static\s+NSString\s*\*const\s+FFBundleIDFreeFireTH[^;]+;",
-              r"static\s+NSString\s*\*const\s+FFBundleIDFreeFireMAX[^;]+;",
-              r"static\s+NSString\s*\*const\s+FFOwnerTelegram[^;]+;",
-              r"static\s+NSString\s*\*const\s+FFOfficialChannelURL[^;]+;",
-              r"static\s+NSString\s*\*const\s+FFHologramShaderFilename[^;]+;",
-              r"static\s+NSString\s*\*const\s+FFThreeDShaderFilename[^;]+;",
-              r"static\s+NSString\s*\*const\s+FFHologramStateKey[^;]+;",
-              r"static\s+NSURL\s*\*FFFindGameAssetBundles[^;]+;",
-          ]
-          for p in patterns:
-              c = re.sub(p, "", c)
-
-          decl = """
-          static BOOL FFBrandIdentityIsValid(void) { return YES; }
-          static NSString *FFAPIBaseURL(void) { return @""; }
-          static NSString *const FFBundleIDFreeFireTH = @"com.dts.freefireth";
-          static NSString *const FFBundleIDFreeFireMAX = @"com.dts.freefiremax";
-          static NSString *const FFOwnerTelegram = @"@cheatgnexusiphone";
-          static NSString *const FFOfficialChannelURL = @"https://t.me/cheatgnexusiphone";
-          static NSString *const FFHologramShaderFilename = @"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D";
-          static NSString *const FFThreeDShaderFilename = @"optionalavatarres_commonab_shader";
-          static NSString *const FFHologramStateKey = @"FMHologramPersistentState";
-          static NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);
-          static void FFDiagnosticLog(NSString *format, ...);
-          """
-
-          if '#import "ProtectedConfig.h"' in c:
-              c = c.replace('#import "ProtectedConfig.h"', '#import "ProtectedConfig.h"\n' + decl.strip(), 1)
-          else:
-              c = decl + "\n" + c
-
-          with open(main_file, "w", encoding="utf-8") as f:
-              f.write(c)
-
-          print(f"[OK] Self-healing source patch applied successfully to {main_file}")
-          EOF_PYTHON
+          c = open(f, 'r', encoding='utf-8', errors='ignore').read()
+          c = c.replace('gojoImage', 'fougoImage')
+          if 'FFOwnerTelegram' not in c:
+              target = 'static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";'
+              replacement = 'static NSString *const FFOfficialChannelURL = @\"https://t.me/cheatgnexusiphone\";\nstatic NSString *const FFOwnerTelegram = @\"@cheatgnexusiphone\";\nstatic void FFDiagnosticLog(NSString *format, ...);'
+              if target in c:
+                  c = c.replace(target, replacement, 1)
+              else:
+                  c = replacement + '\n' + c
+          c = re.sub(r'static\s+BOOL\s+FFBrandIdentityIsValid\s*\([^\)]*\)\s*\{[^}]*\}', 'static BOOL FFBrandIdentityIsValid(void) {\n    return YES;\n}', c)
+          c = c.replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo')
+          open(f, 'w', encoding='utf-8').write(c)
+          print('[OK] Safely patched', f)
+          " "$MAIN_FILE"
 
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
             python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
@@ -290,29 +254,16 @@ jobs:
       - name: Sanitize Branding and Install Bot Dependencies
         run: |
           if [ -f "bot-package/bot.py" ]; then
-            python3 - << 'EOF_BOT'
+            python3 -c "
             import os, re
-
-            p = "bot-package/bot.py"
+            p = 'bot-package/bot.py'
             if os.path.exists(p):
-                with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                    t = f.read()
-
-                t = t.replace("MYZO PANEL", "FOUGO EXTERNAL")
-                t = t.replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
-                t = t.replace("MYZO", "FOUGO")
-                t = t.replace("Myzo", "Fougo")
-
-                t = re.sub(
-                    r"INSTANCES\s*=\s*\[[^\]]*\]",
-                    'INSTANCES = [\n    "BODY", "NECK"\n]',
-                    t
-                )
-
-                with open(p, "w", encoding="utf-8") as f:
-                    f.write(t)
-                print("[OK] Telegram bot rebranded and instances synchronized to BODY and NECK")
-            EOF_BOT
+                t = open(p, 'r', encoding='utf-8', errors='ignore').read()
+                t = t.replace('MYZO PANEL', 'FOUGO EXTERNAL').replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO').replace('Myzo', 'Fougo')
+                t = re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = [\"BODY\", \"NECK\"]', t)
+                open(p, 'w', encoding='utf-8').write(t)
+                print('[OK] Telegram bot rebranded and instances synchronized to BODY and NECK')
+            "
             python3 -m py_compile bot-package/bot.py
             echo "[OK] Bot syntax validated successfully"
           fi
