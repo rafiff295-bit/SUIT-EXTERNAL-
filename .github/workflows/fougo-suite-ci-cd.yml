@@ -100,11 +100,62 @@ jobs:
           SOURCE_DIR="${{ steps.source.outputs.source_dir }}"
           echo "Patching source file: $MAIN_FILE"
 
-          if [ -f "scripts/patch_fougo.py" ]; then
-            python3 scripts/patch_fougo.py "$MAIN_FILE"
-          else
-            python3 -c "import base64; exec(base64.b64decode('aW1wb3J0IHN5cywgb3MsIHJlCgpkZWYgbWFpbigpOgogICAgaWYgbGVuKHN5cy5hcmd2KSA8IDI6CiAgICAgICAgcHJpbnQoIltXQVJOXSBObyBtYWluLm0gcGF0aCBwcm92aWRlZCIpCiAgICAgICAgcmV0dXJuCiAgICBtYWluX2ZpbGUgPSBzeXMuYXJndlsxXQogICAgaWYgbm90IG9zLnBhdGguZXhpc3RzKG1haW5fZmlsZSk6CiAgICAgICAgcHJpbnQoZiJbV0FSTl0gRmlsZSBkb2VzIG5vdCBleGlzdDoge21haW5fZmlsZX0iKQogICAgICAgIHJldHVybgoKICAgIHdpdGggb3BlbihtYWluX2ZpbGUsICJyIiwgZW5jb2Rpbmc9InV0Zi04IiwgZXJyb3JzPSJpZ25vcmUiKSBhcyBmOgogICAgICAgIGMgPSBmLnJlYWQoKQoKICAgICMgMS4gQ2xlYW5seSBzdHJpcCBhbnkgZXhpc3RpbmcgKG9yIGJyb2tlbi9kdXBsaWNhdGUpIGRlZmluaXRpb25zIG9mIHRoZXNlIGNvbnN0YW50cyBhbmQgZnVuY3Rpb25zCiAgICBjID0gcmUuc3ViKHIic3RhdGljXHMrQk9PTFxzK0ZGQnJhbmRJZGVudGl0eUlzVmFsaWRccypcKFteKV0qXClccypce1tefV0qXH0oXHMqXH0pPyIsICIiLCBjKQogICAgYyA9IHJlLnN1YihyInN0YXRpY1xzK05TU3RyaW5nXHMqXCpGRkFQSUJhc2VVUkxccypcKFteKV0qXClccypce1tefV0qXH0iLCAiIiwgYykKICAgIGMgPSByZS5zdWIociJzdGF0aWNccytOU1N0cmluZ1xzKlwqY29uc3RccytGRkJ1bmRsZUlERnJlZUZpcmVUSFxzKj1bXjtdKzsiLCAiIiwgYykKICAgIGMgPSByZS5zdWIociJzdGF0aWNccytOU1N0cmluZ1xzKlwqY29uc3RccytGRkJ1bmRsZUlERnJlZUZpcmVNQVhccyo9W147XSs7IiwgIiIsIGMpCiAgICBjID0gcmUuc3ViKHIic3RhdGljXHMrTlNTdHJpbmdccypcKmNvbnN0XHMrRkZPd25lclRlbGVncmFtXHMqPVteO10rOyIsICIiLCBjKQogICAgYyA9IHJlLnN1YihyInN0YXRpY1xzK05TU3RyaW5nXHMqXCpjb25zdFxzK0ZGT2ZmaWNpYWxDaGFubmVsVVJMXHMqPVteO10rOyIsICIiLCBjKQogICAgYyA9IHJlLnN1YihyInN0YXRpY1xzK05TU3RyaW5nXHMqXCpjb25zdFxzK0ZGSG9sb2dyYW1TaGFkZXJGaWxlbmFtZVxzKj1bXjtdKzsiLCAiIiwgYykKICAgIGMgPSByZS5zdWIociJzdGF0aWNccytOU1N0cmluZ1xzKlwqY29uc3RccytGRlRocmVlRFNoYWRlckZpbGVuYW1lXHMqPVteO10rOyIsICIiLCBjKQogICAgYyA9IHJlLnN1YihyInN0YXRpY1xzK05TU3RyaW5nXHMqXCpjb25zdFxzK0ZGSG9sb2dyYW1TdGF0ZUtleVxzKj1bXjtdKzsiLCAiIiwgYykKICAgIGMgPSByZS5zdWIociJzdGF0aWNccytOU1VSTFxzKlwqRkZGaW5kR2FtZUFzc2V0QnVuZGxlc1xzKlwoW14pXSpcKVxzKjsiLCAiIiwgYykKCiAgICAjIDIuIEZpeCB1bmRlY2xhcmVkIGlkZW50aWZpZXIgJ2dvam9JbWFnZScgLT4gJ2ZvdWdvSW1hZ2UnCiAgICBjID0gYy5yZXBsYWNlKCJnb2pvSW1hZ2UiLCAiZm91Z29JbWFnZSIpCgogICAgIyAzLiBDbGVhbiB1cCBhbnkgbGVmdG92ZXIgZHVwbGljYXRlIGJyYWNlcwogICAgYyA9IHJlLnN1YihyIlxuXH1ccypcblx9XHMqXG4iLCAiXG59XG4iLCBjKQoKICAgICMgNC4gSW5zZXJ0IGNhbm9uaWNhbCBhdXRob3JpdGF0aXZlIGRlZmluaXRpb25zIHJpZ2h0IGFmdGVyICcjaW1wb3J0ICJQcm90ZWN0ZWRDb25maWcuaCInCiAgICBjbGVhbl9kZWNsYXJhdGlvbnMgPSAnJycjaW1wb3J0ICJQcm90ZWN0ZWRDb25maWcuaCIKCnN0YXRpYyBCT09MIEZGQnJhbmRJZGVudGl0eUlzVmFsaWQodm9pZCkgewogICAgcmV0dXJuIFlFUzsKfQoKc3RhdGljIE5TU3RyaW5nICpGRkFQSUJhc2VVUkwodm9pZCkgewogICAgcmV0dXJuIEAiIjsKfQoKc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkJ1bmRsZUlERnJlZUZpcmVUSCA9IEAiY29tLmR0cy5mcmVlZmlyZXRoIjsKc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkJ1bmRsZUlERnJlZUZpcmVNQVggPSBAImNvbS5kdHMuZnJlZWZpcmVtYXgiOwpzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGT3duZXJUZWxlZ3JhbSA9IEAiQGNoZWF0Z25leHVzaXBob25lIjsKc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRk9mZmljaWFsQ2hhbm5lbFVSTCA9IEAiaHR0cHM6Ly90Lm1lL2NoZWF0Z25leHVzaXBob25lIjsKc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRkhvbG9ncmFtU2hhZGVyRmlsZW5hbWUgPSBAInNoYWRlcnMuSFB0OURadmlUU1hMOWhwR1c5UU5PTWlnTkxBfjNEIjsKc3RhdGljIE5TU3RyaW5nICpjb25zdCBGRlRocmVlRFNoYWRlckZpbGVuYW1lID0gQCJvcHRpb25hbGF2YXRhcnJlc19jb21tb25hYl9zaGFkZXIiOwpzdGF0aWMgTlNTdHJpbmcgKmNvbnN0IEZGSG9sb2dyYW1TdGF0ZUtleSA9IEAiRk1Ib2xvZ3JhbVBlcnNpc3RlbnRTdGF0ZSI7CgpzdGF0aWMgTlNVUkwgKkZGRmluZEdhbWVBc3NldEJ1bmRsZXMoTlNVUkwgKnJvb3QsIE5TRXJyb3IgKiplcnJvcik7CnN0YXRpYyB2b2lkIEZGRGlhZ25vc3RpY0xvZyhOU1N0cmluZyAqZm9ybWF0LCAuLi4pOwonJycKCiAgICBpZiAnI2ltcG9ydCAiUHJvdGVjdGVkQ29uZmlnLmgiJyBpbiBjOgogICAgICAgIGMgPSBjLnJlcGxhY2UoJyNpbXBvcnQgIlByb3RlY3RlZENvbmZpZy5oIicsIGNsZWFuX2RlY2xhcmF0aW9ucy5zdHJpcCgpLCAxKQogICAgZWxzZToKICAgICAgICBjID0gY2xlYW5fZGVjbGFyYXRpb25zICsgIlxuIiArIGMKCiAgICAjIDUuIFNhbml0aXplIGJyYW5kIG5hbWVzCiAgICBjID0gYy5yZXBsYWNlKCJNWVpPIFBBTkVMIiwgIkZPVUdPIEVYVEVSTkFMIikKICAgIGMgPSBjLnJlcGxhY2UoIk1ZWk8gRVhURVJOQUwiLCAiRk9VR08gRVhURVJOQUwiKQogICAgYyA9IGMucmVwbGFjZSgiTVlaTyIsICJGT1VHTyIpCiAgICBjID0gYy5yZXBsYWNlKCJNeXpvIiwgIkZvdWdvIikKCiAgICB3aXRoIG9wZW4obWFpbl9maWxlLCAidyIsIGVuY29kaW5nPSJ1dGYtOCIpIGFzIGY6CiAgICAgICAgZi53cml0ZShjKQoKICAgIHByaW50KGYiW09LXSBTZWxmLWhlYWxpbmcgc291cmNlIHBhdGNoIGFwcGxpZWQgc3VjY2Vzc2Z1bGx5IHRvIHttYWluX2ZpbGV9IikKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBtYWluKCkK\").decode(\"utf-8\"))" "$MAIN_FILE"
-          fi
+          python3 - "$MAIN_FILE" << 'EOF_PYTHON'
+          import sys, os, re
+
+          main_file = sys.argv[1]
+          if not os.path.exists(main_file):
+              print(f"[WARN] File does not exist: {main_file}")
+              sys.exit(0)
+
+          with open(main_file, "r", encoding="utf-8", errors="ignore") as f:
+              c = f.read()
+
+          c = c.replace("gojoImage", "fougoImage")
+          c = c.replace("MYZO PANEL", "FOUGO EXTERNAL")
+          c = c.replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
+          c = c.replace("MYZO", "FOUGO")
+          c = c.replace("Myzo", "Fougo")
+
+          patterns = [
+              r"static\s+BOOL\s+FFBrandIdentityIsValid[^{]*\{[^}]*\}(\s*\})?",
+              r"static\s+NSString\s*\*FFAPIBaseURL[^{]*\{[^}]*\}",
+              r"static\s+NSString\s*\*const\s+FFBundleIDFreeFireTH[^;]+;",
+              r"static\s+NSString\s*\*const\s+FFBundleIDFreeFireMAX[^;]+;",
+              r"static\s+NSString\s*\*const\s+FFOwnerTelegram[^;]+;",
+              r"static\s+NSString\s*\*const\s+FFOfficialChannelURL[^;]+;",
+              r"static\s+NSString\s*\*const\s+FFHologramShaderFilename[^;]+;",
+              r"static\s+NSString\s*\*const\s+FFThreeDShaderFilename[^;]+;",
+              r"static\s+NSString\s*\*const\s+FFHologramStateKey[^;]+;",
+              r"static\s+NSURL\s*\*FFFindGameAssetBundles[^;]+;",
+          ]
+          for p in patterns:
+              c = re.sub(p, "", c)
+
+          decl = """
+          static BOOL FFBrandIdentityIsValid(void) { return YES; }
+          static NSString *FFAPIBaseURL(void) { return @""; }
+          static NSString *const FFBundleIDFreeFireTH = @"com.dts.freefireth";
+          static NSString *const FFBundleIDFreeFireMAX = @"com.dts.freefiremax";
+          static NSString *const FFOwnerTelegram = @"@cheatgnexusiphone";
+          static NSString *const FFOfficialChannelURL = @"https://t.me/cheatgnexusiphone";
+          static NSString *const FFHologramShaderFilename = @"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D";
+          static NSString *const FFThreeDShaderFilename = @"optionalavatarres_commonab_shader";
+          static NSString *const FFHologramStateKey = @"FMHologramPersistentState";
+          static NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);
+          static void FFDiagnosticLog(NSString *format, ...);
+          """
+
+          if '#import "ProtectedConfig.h"' in c:
+              c = c.replace('#import "ProtectedConfig.h"', '#import "ProtectedConfig.h"\n' + decl.strip(), 1)
+          else:
+              c = decl + "\n" + c
+
+          with open(main_file, "w", encoding="utf-8") as f:
+              f.write(c)
+
+          print(f"[OK] Self-healing source patch applied successfully to {main_file}")
+          EOF_PYTHON
 
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
             python3 -c "import sys; p = sys.argv[1]; c = open(p, errors='ignore').read().replace('MYZO EXTERNAL', 'FOUGO EXTERNAL').replace('MYZO', 'FOUGO'); open(p, 'w').write(c); print('[OK] Info.plist updated')" "$SOURCE_DIR/Info.plist"
@@ -239,11 +290,29 @@ jobs:
       - name: Sanitize Branding and Install Bot Dependencies
         run: |
           if [ -f "bot-package/bot.py" ]; then
-            if [ -f "scripts/patch_bot.py" ]; then
-              python3 scripts/patch_bot.py
-            else
-              python3 -c "import base64; exec(base64.b64decode('aW1wb3J0IG9zLCByZQoKZGVmIG1haW4oKToKICAgIHAgPSAiYm90LXBhY2thZ2UvYm90LnB5IgogICAgaWYgbm90IG9zLnBhdGguZXhpc3RzKHApOgogICAgICAgIHJldHVybgoKICAgIHdpdGggb3BlbihwLCAiciIsIGVuY29kaW5nPSJ1dGYtOCIpIGFzIGY6CiAgICAgICAgdCA9IGYucmVhZCgpCgogICAgIyBSZWJyYW5kCiAgICB0ID0gdC5yZXBsYWNlKCJNWVpPIFBBTkVMIiwgIkZPVUdPIEVYVEVSTkFMIikKICAgIHQgPSB0LnJlcGxhY2UoIk1ZWk8gRVhURVJOQUwiLCAiRk9VR08gRVhURVJOQUwiKQogICAgdCA9IHQucmVwbGFjZSgiTVlaTyIsICJGT1VHTyIpCiAgICB0ID0gdC5yZXBsYWNlKCJNeXpvIiwgIkZvdWdvIikKCiAgICAjIFNldCBpbnN0YW5jZXMgc3RyaWN0bHkgdG8gSVBBJ3MgQk9EWSBhbmQgTkVDSwogICAgdCA9IHJlLnN1YigKICAgICAgICByIklOU1RBTkNFU1xzKj1ccypcW1teXF1dSpcXSIsCiAgICAgICAgJ0lOU1RBTkNFUyA9IFtcbiAgICAiQk9EWSIsICJORUNLIlxuXScsCiAgICAgICAgdAogICAgKQoKICAgIHdpdGggb3BlbihwLCAidyIsIGVuY29kaW5nPSJ1dGYtOCIpIGFzIGY6CiAgICAgICAgZi53cml0ZSh0KQogICAgcHJpbnQoIltPS10gVGVsZWdyYW0gYm90IHJlYnJhbmRlZCBhbmQgaW5zdGFuY2VzIHN5bmNocm9uaXplZCB0byBCT0RZIGFuZCBORUNLIikKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBtYWluKCkK').decode(\"utf-8\"))"
-            fi
+            python3 - << 'EOF_BOT'
+            import os, re
+
+            p = "bot-package/bot.py"
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    t = f.read()
+
+                t = t.replace("MYZO PANEL", "FOUGO EXTERNAL")
+                t = t.replace("MYZO EXTERNAL", "FOUGO EXTERNAL")
+                t = t.replace("MYZO", "FOUGO")
+                t = t.replace("Myzo", "Fougo")
+
+                t = re.sub(
+                    r"INSTANCES\s*=\s*\[[^\]]*\]",
+                    'INSTANCES = [\n    "BODY", "NECK"\n]',
+                    t
+                )
+
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(t)
+                print("[OK] Telegram bot rebranded and instances synchronized to BODY and NECK")
+            EOF_BOT
             python3 -m py_compile bot-package/bot.py
             echo "[OK] Bot syntax validated successfully"
           fi
