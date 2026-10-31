@@ -132,10 +132,8 @@ jobs:
             -lobjc -lSystem \
             "$MAIN_FILE" -o "$APP_DIR/fougoexternal"
 
-          cp "$APP_DIR/fougoexternal" "$APP_DIR/FougoExternal"
           strip -x "$APP_DIR/fougoexternal" 2>/dev/null || true
-          strip -x "$APP_DIR/FougoExternal" 2>/dev/null || true
-          chmod 755 "$APP_DIR/fougoexternal" "$APP_DIR/FougoExternal"
+          chmod 755 "$APP_DIR/fougoexternal"
 
           # Prepare Info.plist with valid bundle configuration
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
