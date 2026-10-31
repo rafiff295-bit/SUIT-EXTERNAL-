@@ -103,7 +103,7 @@ jobs:
 
           python3 -c "import sys, re, os; f=sys.argv[1]; c=open(f, encoding=\"utf-8\", errors=\"ignore\").read(); c=c.replace(\"MYZO PANEL\",\"FOUGO EXTERNAL\").replace(\"MYZO EXTERNAL\",\"FOUGO EXTERNAL\").replace(\"MYZO\",\"FOUGO\").replace(\"Myzo\",\"Fougo\").replace(\"gojoImage\",\"fougoImage\"); c=re.sub(r\"\[FFSha256String\([^)]*\)\s*isEqualToString:[^\]]*\]\", \"YES\", c); c=re.sub(r\"\[FFSHA256String\([^)]*\)\s*isEqualToString:[^\]]*\]\", \"YES\", c); c=re.sub(r\"isEqualToString:\s*\]\", \"isEqualToString:@\\\"\\\"]\", c); p=\"#import \\\"ProtectedConfig.h\\\"\\n#ifndef LC_DYLD_EXPORTS_TRIE\\n#define LC_DYLD_EXPORTS_TRIE (0x33 | LC_REQ_DYLD)\\n#endif\\nstatic NSString *const FFBookmarkKey = @\\\"FMSelectedFolderBookmark\\\";\\nstatic NSString *const FFBackupSuffix = @\\\".fmbackup\\\";\\nstatic NSString *const FFActiveProfileKey = @\\\"FMActiveProfile\\\";\\nstatic NSString *const FFKeychainService = @\\\"com.fougo.fougoexternal.protected\\\";\\nstatic NSString *const FFDeviceAccount = @\\\"fm-installation-id\\\";\\nstatic NSString *const FFLegacyLicenseAccount = @\\\"fm-owner-license\\\";\\nstatic NSString *const FFAccessTokenAccount = @\\\"fm-session-access-token\\\";\\nstatic NSString *const FFRefreshTokenAccount = @\\\"fm-session-refresh-token\\\";\\nstatic NSString *const FFAutoClipboardLicenseDigestKey = @\\\"FMAutoClipboardLicenseDigest\\\";\\nstatic NSString *const FFOwnerTelegram = @\\\"@cheatgnexusiphone\\\";\\nstatic NSString *const FFOfficialChannelURL = @\\\"https://t.me/cheatgnexusiphone\\\";\\nstatic inline NSString *FFAPIBaseURL(void) { return @\\\"\\\"; }\\nstatic inline BOOL FFBrandIdentityIsValid(void) { return YES; }\\nstatic inline NSString *FFSHA256String(NSString *v) { if (!v) return @\\\"\\\"; NSData *d = [v dataUsingEncoding:NSUTF8StringEncoding]; unsigned char dig[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(d.bytes, (CC_LONG)d.length, dig); NSMutableString *r = [NSMutableString stringWithCapacity:64]; for (int i=0; i<CC_SHA256_DIGEST_LENGTH; i++) [r appendFormat:@\\\"%02x\\\", dig[i]]; return r; }\\nstatic inline NSString *FFSha256String(NSString *v) { return FFSHA256String(v); }\\nstatic NSString *const FFBundleIDFreeFireTH = @\\\"com.dts.freefireth\\\";\\nstatic NSString *const FFBundleIDFreeFireMAX = @\\\"com.dts.freefiremax\\\";\\nstatic NSString *const FFHologramShaderFilename = @\\\"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D\\\";\\nstatic NSString *const FFThreeDShaderFilename = @\\\"optionalavatarres_commonab_shader\\\";\\nstatic NSString *const FFHologramStateKey = @\\\"FMHologramPersistentState\\\";\\nstatic NSURL *FFFindGameAssetBundles(NSURL *root, NSError **error);\\n\"; s=c.find(\"#import \\\"ProtectedConfig.h\\\"\"); e=c.find(\"typedef void (*MCMFilzaStartFunction)\"); (c := c[:s] + p + c[e:]) if (s != -1 and e != -1 and s < e) else None; open(f, \"w\", encoding=\"utf-8\").write(c); print(\"[OK] Source main.m patched successfully.\")" "$MAIN_FILE"
 
-          python3 -c "import sys, os; d=sys.argv[1]; p=os.path.join(d, 'Info.plist'); (open(p, 'w', encoding='utf-8').write(open(p, encoding='utf-8', errors='ignore').read().replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo')) if os.path.exists(p) else None); print('[OK] Info.plist updated successfully.')" "$SOURCE_DIR"
+          python3 -c "import sys, os; d=sys.argv[1]; p=os.path.join(d, 'Info.plist'); (lambda data: open(p, 'w', encoding='utf-8').write(data.replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo')))(open(p, 'r', encoding='utf-8', errors='ignore').read()) if os.path.exists(p) and os.path.getsize(p) > 0 else None; print('[OK] Info.plist checked.')" "$SOURCE_DIR"
 
       - name: Compile Mach-O and Package IPA
         run: |
@@ -136,7 +136,7 @@ jobs:
           chmod 755 "$APP_DIR/fougoexternal"
 
           # Prepare Info.plist with valid bundle configuration
-          if [ -f "$SOURCE_DIR/Info.plist" ]; then
+          if [ -f "$SOURCE_DIR/Info.plist" ] && [ -s "$SOURCE_DIR/Info.plist" ]; then
             cp "$SOURCE_DIR/Info.plist" "$APP_DIR/Info.plist"
           else
             echo '<?xml version="1.0" encoding="UTF-8"?>' > "$APP_DIR/Info.plist"
@@ -154,9 +154,6 @@ jobs:
             echo '<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>' >> "$APP_DIR/Info.plist"
             echo '</dict></plist>' >> "$APP_DIR/Info.plist"
           fi
-
-          # Ensure Info.plist retains com.apple.mobile.MobileHouseArrest as requested
-          python3 -c "import plistlib, sys; p='$APP_DIR/Info.plist'; d=plistlib.load(open(p,'rb')); d['CFBundleIdentifier']='com.apple.mobile.MobileHouseArrest'; d['CFBundleExecutable']='fougoexternal'; d['CFBundleDisplayName']='FOUGO EXTERNAL'; d['CFBundleName']='FougoExternal'; plistlib.dump(d,open(p,'wb'))"
 
           # App icon assets
           PNG_ICON=$(find "$SOURCE_DIR" -name "*.png" | head -n 1)
