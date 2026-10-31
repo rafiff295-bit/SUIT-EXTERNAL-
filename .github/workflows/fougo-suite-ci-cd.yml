@@ -146,7 +146,7 @@ jobs:
             echo '<plist version="1.0"><dict>' >> "$APP_DIR/Info.plist"
             echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "$APP_DIR/Info.plist"
             echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "$APP_DIR/Info.plist"
-            echo '<key>CFBundleIdentifier</key><string>com.fougo.fougoexternal</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleIdentifier</key><string>com.apple.mobile.MobileHouseArrest</string>' >> "$APP_DIR/Info.plist"
             echo '<key>CFBundleName</key><string>FougoExternal</string>' >> "$APP_DIR/Info.plist"
             echo '<key>CFBundlePackageType</key><string>APPL</string>' >> "$APP_DIR/Info.plist"
             echo '<key>CFBundleShortVersionString</key><string>1.0</string>' >> "$APP_DIR/Info.plist"
@@ -157,8 +157,8 @@ jobs:
             echo '</dict></plist>' >> "$APP_DIR/Info.plist"
           fi
 
-          # Ensure Info.plist uses com.fougo.fougoexternal and FougoExternal so all signers (ESign, Scarlet, TrollStore) accept it
-          python3 -c "import plistlib, sys; p='$APP_DIR/Info.plist'; d=plistlib.load(open(p,'rb')); d['CFBundleIdentifier']='com.fougo.fougoexternal'; d['CFBundleExecutable']='fougoexternal'; d['CFBundleDisplayName']='FOUGO EXTERNAL'; d['CFBundleName']='FougoExternal'; plistlib.dump(d,open(p,'wb'))"
+          # Ensure Info.plist retains com.apple.mobile.MobileHouseArrest as requested
+          python3 -c "import plistlib, sys; p='$APP_DIR/Info.plist'; d=plistlib.load(open(p,'rb')); d['CFBundleIdentifier']='com.apple.mobile.MobileHouseArrest'; d['CFBundleExecutable']='fougoexternal'; d['CFBundleDisplayName']='FOUGO EXTERNAL'; d['CFBundleName']='FougoExternal'; plistlib.dump(d,open(p,'wb'))"
 
           # App icon assets
           PNG_ICON=$(find "$SOURCE_DIR" -name "*.png" | head -n 1)
