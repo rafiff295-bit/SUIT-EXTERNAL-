@@ -112,7 +112,9 @@ jobs:
           SDK_PATH="${{ steps.sdk.outputs.sdk_path }}"
           BUILD_MODE="${{ github.event.inputs.build_mode || 'offline' }}"
 
-          mkdir -p "build_output/Payload/FOUGO EXTERNAL.app"
+          APP_DIR="build_output/Payload/FougoExternal.app"
+          rm -rf build_output
+          mkdir -p "$APP_DIR"
 
           EXTRA_FLAGS="-DFM_OFFLINE_BUILD=1"
           if [ "$BUILD_MODE" = "online" ]; then
@@ -128,46 +130,69 @@ jobs:
             -framework UIKit -framework Foundation -framework CoreGraphics \
             -framework QuartzCore -framework Security -framework UniformTypeIdentifiers \
             -lobjc -lSystem \
-            "$MAIN_FILE" -o "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal"
+            "$MAIN_FILE" -o "$APP_DIR/fougoexternal"
 
-          cp "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL"
-          strip -x "build_output/Payload/FOUGO EXTERNAL.app/fougoexternal" 2>/dev/null || true
-          strip -x "build_output/Payload/FOUGO EXTERNAL.app/FOUGO EXTERNAL" 2>/dev/null || true
+          cp "$APP_DIR/fougoexternal" "$APP_DIR/FougoExternal"
+          strip -x "$APP_DIR/fougoexternal" 2>/dev/null || true
+          strip -x "$APP_DIR/FougoExternal" 2>/dev/null || true
+          chmod 755 "$APP_DIR/fougoexternal" "$APP_DIR/FougoExternal"
 
+          # Prepare Info.plist with valid bundle configuration
           if [ -f "$SOURCE_DIR/Info.plist" ]; then
-            cp "$SOURCE_DIR/Info.plist" "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            cp "$SOURCE_DIR/Info.plist" "$APP_DIR/Info.plist"
           else
-            echo '<?xml version="1.0" encoding="UTF-8"?>' > "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<plist version="1.0"><dict>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleIdentifier</key><string>com.apple.mobile.MobileHouseArrest</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleName</key><string>FOUGO EXTERNAL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundlePackageType</key><string>APPL</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleShortVersionString</key><string>1.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>CFBundleVersion</key><string>1</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>LSRequiresIPhoneOS</key><true/>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>MinimumOSVersion</key><string>15.0</string>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
-            echo '</dict></plist>' >> "build_output/Payload/FOUGO EXTERNAL.app/Info.plist"
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > "$APP_DIR/Info.plist"
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> "$APP_DIR/Info.plist"
+            echo '<plist version="1.0"><dict>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleDisplayName</key><string>FOUGO EXTERNAL</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleExecutable</key><string>fougoexternal</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleIdentifier</key><string>com.fougo.fougoexternal</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleName</key><string>FougoExternal</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundlePackageType</key><string>APPL</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleShortVersionString</key><string>1.0</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>CFBundleVersion</key><string>1</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>LSRequiresIPhoneOS</key><true/>' >> "$APP_DIR/Info.plist"
+            echo '<key>MinimumOSVersion</key><string>15.0</string>' >> "$APP_DIR/Info.plist"
+            echo '<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>' >> "$APP_DIR/Info.plist"
+            echo '</dict></plist>' >> "$APP_DIR/Info.plist"
           fi
 
-          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "build_output/Payload/FOUGO EXTERNAL.app/fougoExternalBackground.jpg" \; 2>/dev/null || true
+          # Ensure Info.plist uses com.fougo.fougoexternal and FougoExternal so all signers (ESign, Scarlet, TrollStore) accept it
+          python3 -c "import plistlib, sys; p='$APP_DIR/Info.plist'; d=plistlib.load(open(p,'rb')); d['CFBundleIdentifier']='com.fougo.fougoexternal'; d['CFBundleExecutable']='fougoexternal'; d['CFBundleDisplayName']='FOUGO EXTERNAL'; d['CFBundleName']='FougoExternal'; plistlib.dump(d,open(p,'wb'))"
 
+          # App icon assets
+          PNG_ICON=$(find "$SOURCE_DIR" -name "*.png" | head -n 1)
+          if [ -n "$PNG_ICON" ]; then
+            cp "$PNG_ICON" "$APP_DIR/AppIcon60x60@2x.png" 2>/dev/null || true
+            cp "$PNG_ICON" "$APP_DIR/AppIcon60x60@3x.png" 2>/dev/null || true
+            cp "$PNG_ICON" "$APP_DIR/AppIcon76x76@2x~ipad.png" 2>/dev/null || true
+            cp "$PNG_ICON" "$APP_DIR/AppIcon83.5x83.5@2x~ipad.png" 2>/dev/null || true
+            cp "$PNG_ICON" "$APP_DIR/icon.png" 2>/dev/null || true
+          fi
+
+          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "$APP_DIR/fougoExternalBackground.jpg" \; 2>/dev/null || true
+
+          # Offline profiles
+          mkdir -p "$APP_DIR/OfflineCache"
           if [ -d "$SOURCE_DIR/resources/offline" ]; then
-            mkdir -p "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache"
-            cp "$SOURCE_DIR/resources/offline/"*.robotexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
-            cp "$SOURCE_DIR/resources/offline/"*.fougoexternal "build_output/Payload/FOUGO EXTERNAL.app/OfflineCache/" 2>/dev/null || true
+            cp "$SOURCE_DIR/resources/offline/"* "$APP_DIR/OfflineCache/" 2>/dev/null || true
+            cp "$SOURCE_DIR/resources/offline/"* "$APP_DIR/" 2>/dev/null || true
+            for f in "$APP_DIR/OfflineCache/"*.robotexternal; do
+              [ -f "$f" ] && cp "$f" "${f%.robotexternal}.fougoexternal" 2>/dev/null || true
+            done
+            for f in "$APP_DIR/"*.robotexternal; do
+              [ -f "$f" ] && cp "$f" "${f%.robotexternal}.fougoexternal" 2>/dev/null || true
+            done
           fi
 
-          codesign -s - --force --deep "build_output/Payload/FOUGO EXTERNAL.app" 2>/dev/null || true
+          chmod -R 755 "build_output/Payload"
+          codesign -s - --force --deep "$APP_DIR" 2>/dev/null || true
 
           IPA_NAME="FOUGO-EXTERNAL-v1.0.0.ipa"
-          cd build_output && zip -qry "../$IPA_NAME" Payload/ && cd ..
+          cd build_output && zip -qry -X "../$IPA_NAME" Payload/ -x "*.DS_Store" -x "__MACOSX*" && cd ..
           shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256"
 
-          echo "[OK] Built $IPA_NAME"
+          echo "[OK] Built clean, signer-compatible $IPA_NAME"
           cat "$IPA_NAME.sha256"
 
       - name: Upload iOS IPA Artifact
