@@ -105,9 +105,6 @@ jobs:
 
           python3 -c "import sys, os; d=sys.argv[1]; p=os.path.join(d, 'Info.plist'); (lambda data: open(p, 'w', encoding='utf-8').write(data.replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo')))(open(p, 'r', encoding='utf-8', errors='ignore').read()) if os.path.exists(p) and os.path.getsize(p) > 0 else None; print('[OK] Info.plist checked.')" "$SOURCE_DIR"
 
-      # =========================================================================
-      # DIRECT LOGIN PAGE INJECTION INTO SOURCE CODE
-      # =========================================================================
       - name: Inject VIP License Login Page & Access Portal UI
         run: |
           MAIN_FILE="${{ steps.source.outputs.main_file }}"
@@ -163,91 +160,65 @@ jobs:
           - (void)buildAccessContent {
               UIStackView *cardStack = [UIStackView new];
               cardStack.axis = UILayoutConstraintAxisVertical;
-              cardStack.spacing = 16;
+              cardStack.spacing = 15;
               cardStack.alignment = UIStackViewAlignmentFill;
               cardStack.translatesAutoresizingMaskIntoConstraints = NO;
 
-              // 1. Geometric F Monogram Logo
-              UIView *monogramContainer = [UIView new];
-              monogramContainer.translatesAutoresizingMaskIntoConstraints = NO;
-              [monogramContainer.heightAnchor constraintEqualToConstant:58].active = YES;
+              UIView *iconContainer = [UIView new];
+              iconContainer.translatesAutoresizingMaskIntoConstraints = NO;
+              [iconContainer.heightAnchor constraintEqualToConstant:50].active = YES;
               
-              FFGeometricFLogoView *fLogo = [[FFGeometricFLogoView alloc] initWithFrame:CGRectMake(0, 0, 58, 58)];
-              fLogo.translatesAutoresizingMaskIntoConstraints = NO;
-              [monogramContainer addSubview:fLogo];
+              UIImageView *logoImage = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"shield.lefthalf.filled"]];
+              logoImage.tintColor = FFVIPGold();
+              logoImage.contentMode = UIViewContentModeScaleAspectFit;
+              logoImage.translatesAutoresizingMaskIntoConstraints = NO;
+              [iconContainer addSubview:logoImage];
               [NSLayoutConstraint activateConstraints:@[
-                  [fLogo.centerXAnchor constraintEqualToAnchor:monogramContainer.centerXAnchor],
-                  [fLogo.centerYAnchor constraintEqualToAnchor:monogramContainer.centerYAnchor],
-                  [fLogo.widthAnchor constraintEqualToConstant:58],
-                  [fLogo.heightAnchor constraintEqualToConstant:58],
+                  [logoImage.centerXAnchor constraintEqualToAnchor:iconContainer.centerXAnchor],
+                  [logoImage.centerYAnchor constraintEqualToAnchor:iconContainer.centerYAnchor],
+                  [logoImage.widthAnchor constraintEqualToConstant:46],
+                  [logoImage.heightAnchor constraintEqualToConstant:46]
               ]];
-              [cardStack addArrangedSubview:monogramContainer];
+              [cardStack addArrangedSubview:iconContainer];
 
-              // Header Stack
               UIStackView *headerStack = [UIStackView new];
               headerStack.axis = UILayoutConstraintAxisVertical;
               headerStack.spacing = 4;
               headerStack.alignment = UIStackViewAlignmentCenter;
 
-              // 2. Brand name: FOUGO EXTERNAL
-              UILabel *brandLabel = [UILabel new];
-              brandLabel.text = @"FOUGO EXTERNAL";
-              brandLabel.textColor = UIColor.whiteColor;
-              brandLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightHeavy];
+              UILabel *brandLabel = [self labelWithText:@"FOUGO EXTERNAL"
+                  font:[UIFont systemFontOfSize:17 weight:UIFontWeightHeavy] color:FFPrimaryText()];
               brandLabel.textAlignment = NSTextAlignmentCenter;
               [headerStack addArrangedSubview:brandLabel];
 
-              // 3. Subtitle badge: VIP LICENSE ACCESS
-              UILabel *subLabel = [UILabel new];
-              subLabel.text = @"VIP LICENSE ACCESS";
-              subLabel.textColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
-              subLabel.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightBold];
+              UILabel *subLabel = [self labelWithText:@"VIP LICENSE ACCESS"
+                  font:[UIFont monospacedSystemFontOfSize:10.5 weight:UIFontWeightBold] color:FFStatusCyan()];
               subLabel.textAlignment = NSTextAlignmentCenter;
               [headerStack addArrangedSubview:subLabel];
 
-              // 4. Heading: Enter License Key
-              UILabel *headingLabel = [UILabel new];
-              headingLabel.text = @"Enter License Key";
-              headingLabel.textColor = UIColor.whiteColor;
-              headingLabel.font = [UIFont systemFontOfSize:20 weight:UIFontWeightBold];
-              headingLabel.textAlignment = NSTextAlignmentCenter;
-              UIView *spacerTop = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 6)];
-              [headerStack addArrangedSubview:spacerTop];
-              [headerStack addArrangedSubview:headingLabel];
-
-              // 5. Description
-              UILabel *descLabel = [UILabel new];
-              descLabel.text = @"Enter or paste your VIP key to activate";
-              descLabel.textColor = [UIColor colorWithWhite:0.65 alpha:1.0];
-              descLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightRegular];
+              UILabel *descLabel = [self labelWithText:@"Enter or paste your VIP key to activate"
+                  font:[UIFont systemFontOfSize:13 weight:UIFontWeightRegular] color:FFSecondaryText()];
               descLabel.textAlignment = NSTextAlignmentCenter;
               [headerStack addArrangedSubview:descLabel];
 
               [cardStack addArrangedSubview:headerStack];
 
-              // 6. Single License Key Input Field (Unmasked, Key Icon, Monospaced)
               _licenseField = [UITextField new];
-              _licenseField.placeholder = @"FOUGO-XXXXX-XXXXX-XXXXX-XXXXX";
-              _licenseField.attributedPlaceholder = [[NSAttributedString alloc]
-                  initWithString:@"FOUGO-XXXXX-XXXXX-XXXXX-XXXXX"
-                  attributes:@{
-                      NSForegroundColorAttributeName: [UIColor colorWithWhite:0.4 alpha:1.0],
-                      NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightMedium]
-                  }];
-              _licenseField.textColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.72 alpha:1.0];
+              _licenseField.placeholder = @"ENTER LICENSE KEY";
+              _licenseField.textColor = FFPrimaryText();
               _licenseField.secureTextEntry = NO;
               _licenseField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
               _licenseField.autocorrectionType = UITextAutocorrectionTypeNo;
               _licenseField.spellCheckingType = UITextSpellCheckingTypeNo;
               _licenseField.clearButtonMode = UITextFieldViewModeWhileEditing;
-              _licenseField.backgroundColor = [UIColor colorWithRed:0.04 green:0.06 blue:0.09 alpha:0.9];
+              _licenseField.backgroundColor = [FFVIPBackground() colorWithAlphaComponent:0.85];
               _licenseField.layer.cornerRadius = 14;
               _licenseField.layer.borderWidth = 1.0;
-              _licenseField.layer.borderColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.72 alpha:0.35].CGColor;
+              _licenseField.layer.borderColor = [FFVIPGold() colorWithAlphaComponent:0.35].CGColor;
               _licenseField.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightBold];
               
               UIImageView *keyIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"key.fill"]];
-              keyIcon.tintColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.72 alpha:0.9];
+              keyIcon.tintColor = FFVIPGold();
               keyIcon.contentMode = UIViewContentModeScaleAspectFit;
               UIView *keyPadding = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 42, 50)];
               keyIcon.frame = CGRectMake(14, 16, 18, 18);
@@ -258,65 +229,40 @@ jobs:
               [_licenseField.heightAnchor constraintEqualToConstant:50].active = YES;
               [cardStack addArrangedSubview:_licenseField];
 
-              // 7. Paste from Clipboard Button
-              UIButton *pasteBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-              [pasteBtn setTitle:@"  Paste from Clipboard" forState:UIControlStateNormal];
+              UIButton *pasteBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+              [pasteBtn setTitle:@"  PASTE FROM CLIPBOARD" forState:UIControlStateNormal];
               [pasteBtn setImage:[UIImage systemImageNamed:@"doc.on.clipboard"] forState:UIControlStateNormal];
-              pasteBtn.tintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
-              [pasteBtn setTitleColor:[UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0] forState:UIControlStateNormal];
-              pasteBtn.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-              pasteBtn.backgroundColor = [UIColor colorWithRed:0.08 green:0.14 blue:0.22 alpha:0.6];
+              pasteBtn.tintColor = FFStatusCyan();
+              [pasteBtn setTitleColor:FFStatusCyan() forState:UIControlStateNormal];
+              pasteBtn.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
+              pasteBtn.backgroundColor = [FFVIPPanel() colorWithAlphaComponent:0.8];
               pasteBtn.layer.cornerRadius = 12;
               pasteBtn.layer.borderWidth = 1.0;
-              pasteBtn.layer.borderColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:0.3].CGColor;
-              [pasteBtn.heightAnchor constraintEqualToConstant:42].active = YES;
+              pasteBtn.layer.borderColor = [FFStatusCyan() colorWithAlphaComponent:0.35].CGColor;
+              [pasteBtn.heightAnchor constraintEqualToConstant:44].active = YES;
               [pasteBtn addTarget:self action:@selector(pasteClipboardPressed) forControlEvents:UIControlEventTouchUpInside];
               FFPrepareExistingButtonForVisualFeedback(pasteBtn);
               [cardStack addArrangedSubview:pasteBtn];
 
-              // 8. Full-width ACTIVATE LICENSE button
-              _licenseButton = [UIButton buttonWithType:UIButtonTypeCustom];
-              [_licenseButton setTitle:@"ACTIVATE LICENSE" forState:UIControlStateNormal];
-              [_licenseButton setTitleColor:[UIColor colorWithRed:0.02 green:0.04 blue:0.08 alpha:1.0] forState:UIControlStateNormal];
-              _licenseButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightHeavy];
-              _licenseButton.backgroundColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.72 alpha:1.0];
-              _licenseButton.layer.cornerRadius = 14;
-              _licenseButton.layer.cornerCurve = kCACornerCurveContinuous;
-              _licenseButton.layer.shadowColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.72 alpha:0.5].CGColor;
-              _licenseButton.layer.shadowRadius = 16;
-              _licenseButton.layer.shadowOpacity = 0.85;
-              _licenseButton.layer.shadowOffset = CGSizeMake(0, 4);
-              [_licenseButton.heightAnchor constraintEqualToConstant:50].active = YES;
-              [_licenseButton addTarget:self action:@selector(activateLicensePressed) forControlEvents:UIControlEventTouchUpInside];
-              FFPrepareExistingButtonForVisualFeedback(_licenseButton);
+              _licenseButton = [self actionButton:@"ACTIVATE LICENSE" color:FFVIPGold() selector:@selector(activateLicensePressed)];
+              [_licenseButton.heightAnchor constraintGreaterThanOrEqualToConstant:50].active = YES;
               [cardStack addArrangedSubview:_licenseButton];
 
-              // 9. Telegram Channel Button (Get Key)
               UIButton *telegramBtn = [UIButton buttonWithType:UIButtonTypeSystem];
               [telegramBtn setTitle:[NSString stringWithFormat:@"GET KEY ON TELEGRAM: %@", FFOwnerTelegram] forState:UIControlStateNormal];
-              [telegramBtn setTitleColor:[UIColor colorWithWhite:0.65 alpha:1.0] forState:UIControlStateNormal];
+              [telegramBtn setTitleColor:FFSecondaryText() forState:UIControlStateNormal];
               telegramBtn.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
               [telegramBtn addTarget:self action:@selector(openTelegramPressed) forControlEvents:UIControlEventTouchUpInside];
               [cardStack addArrangedSubview:telegramBtn];
 
-              // Status / Inline Message Label
               _statusLabel = [self labelWithText:_statusText ?: @""
                   font:[UIFont systemFontOfSize:12 weight:UIFontWeightMedium]
-                  color:_statusIsError ? UIColor.systemRedColor : [UIColor colorWithRed:0.18 green:0.88 blue:0.72 alpha:1.0]];
+                  color:_statusIsError ? UIColor.systemRedColor : FFVIPGold()];
               _statusLabel.textAlignment = NSTextAlignmentCenter;
               _statusLabel.numberOfLines = 0;
               [cardStack addArrangedSubview:_statusLabel];
 
-              // 10. Footer branding
-              UILabel *cardFooter = [UILabel new];
-              cardFooter.text = @"FOUGO EXTERNAL";
-              cardFooter.textColor = [UIColor colorWithWhite:0.35 alpha:1.0];
-              cardFooter.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightBold];
-              cardFooter.textAlignment = NSTextAlignmentCenter;
-              [cardStack addArrangedSubview:cardFooter];
-
-              UIView *liquidGlassCard = [self liquidGlassCardWithContent:cardStack];
-              [_rootStack addArrangedSubview:liquidGlassCard];
+              [_rootStack addArrangedSubview:[self cardWithContent:cardStack]];
 
               dispatch_async(dispatch_get_main_queue(), ^{
                   [self activateClipboardLicenseIfAvailable];
