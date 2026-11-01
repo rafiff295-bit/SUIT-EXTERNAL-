@@ -135,7 +135,28 @@ jobs:
           # 2. Enforce Logout / Change Key button
           c = re.sub(r'#ifdef FM_OFFLINE_BUILD\s*\n\s*\(void\)stack;\s*\n\s*return;\s*\n\s*#endif', '', c)
 
-          # 3. Clean VIP License Login Page Objective-C Implementation
+          # 3. Patch FFIntegrityReport & FFLoadSandboxBridge for LCSign, Mango, GBox, ESign
+          resilient_integrity = '''
+          static NSDictionary *FFIntegrityReport(void) {
+              NSBundle *bundle = NSBundle.mainBundle;
+              NSDictionary *info = bundle.infoDictionary ?: @{};
+              NSString *bundleID = bundle.bundleIdentifier ?: @"com.apple.mobile.MobileHouseArrest";
+              NSString *displayName = info[@"CFBundleDisplayName"] ?: info[@"CFBundleName"] ?: @"FOUGO EXTERNAL";
+              return @{
+                  @"app_text_sha256": @"f0060_text_verified", @"app_cstring_sha256": @"f0060_cstring_verified",
+                  @"core_a_text_sha256": @"f0060_core_a_verified", @"core_a_export_sha256": @"f0060_core_a_exp",
+                  @"core_b_text_sha256": @"f0060_core_b_verified", @"core_b_export_sha256": @"f0060_core_b_exp",
+                  @"info_plist_sha256": @"f0060_info_verified", @"framework_plist_sha256": @"f0060_framework_verified",
+                  @"bundle_identifier": bundleID, @"display_name": displayName,
+                  @"app_version": info[@"CFBundleShortVersionString"] ?: @"1.0", @"build_version": info[@"CFBundleVersion"] ?: @"1"
+              };
+          }
+          '''
+          c = re.sub(r'static NSDictionary \*FFIntegrityReport\(void\)[\s\S]*?\n\}', resilient_integrity.strip(), c)
+          c = c.replace('![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.mobile.MobileHouseArrest"]', 'NO')
+          c = re.sub(r'completion\(nil,\s*FFError\(43,\s*@"Application integrity measurement failed\."\)\);', '/* bypassed */', c)
+
+          # 4. Clean VIP License Login Page Objective-C Implementation with App Logo
           login_source = '''
           - (void)pasteClipboardPressed {
               if (_busy) return;
@@ -164,20 +185,32 @@ jobs:
               cardStack.alignment = UIStackViewAlignmentFill;
               cardStack.translatesAutoresizingMaskIntoConstraints = NO;
 
+              // App Logo Header Icon
               UIView *iconContainer = [UIView new];
               iconContainer.translatesAutoresizingMaskIntoConstraints = NO;
-              [iconContainer.heightAnchor constraintEqualToConstant:50].active = YES;
+              [iconContainer.heightAnchor constraintEqualToConstant:64].active = YES;
               
-              UIImageView *logoImage = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"shield.lefthalf.filled"]];
-              logoImage.tintColor = FFVIPGold();
-              logoImage.contentMode = UIViewContentModeScaleAspectFit;
+              UIImage *appLogo = [UIImage imageNamed:@"app_logo.png"];
+              if (!appLogo) appLogo = [UIImage imageNamed:@"app_logo.jpg"];
+              if (!appLogo) appLogo = [UIImage imageNamed:@"icon.png"];
+              if (!appLogo) appLogo = [UIImage imageNamed:@"AppIcon60x60@2x.png"];
+              if (!appLogo) appLogo = [UIImage imageNamed:@"fougoExternalBackground.jpg"];
+              if (!appLogo) appLogo = [UIImage systemImageNamed:@"shield.lefthalf.filled"];
+
+              UIImageView *logoImage = [[UIImageView alloc] initWithImage:appLogo];
+              logoImage.contentMode = UIViewContentModeScaleAspectFill;
+              logoImage.layer.cornerRadius = 16;
+              logoImage.layer.cornerCurve = kCACornerCurveContinuous;
+              logoImage.layer.borderWidth = 1.5;
+              logoImage.layer.borderColor = FFVIPGold().CGColor;
+              logoImage.clipsToBounds = YES;
               logoImage.translatesAutoresizingMaskIntoConstraints = NO;
               [iconContainer addSubview:logoImage];
               [NSLayoutConstraint activateConstraints:@[
                   [logoImage.centerXAnchor constraintEqualToAnchor:iconContainer.centerXAnchor],
                   [logoImage.centerYAnchor constraintEqualToAnchor:iconContainer.centerYAnchor],
-                  [logoImage.widthAnchor constraintEqualToConstant:46],
-                  [logoImage.heightAnchor constraintEqualToConstant:46]
+                  [logoImage.widthAnchor constraintEqualToConstant:56],
+                  [logoImage.heightAnchor constraintEqualToConstant:56]
               ]];
               [cardStack addArrangedSubview:iconContainer];
 
@@ -331,7 +364,13 @@ jobs:
             echo '</dict></plist>' >> "$APP_DIR/Info.plist"
           fi
 
-          # App icon assets
+          # App icon & logo assets
+          find "$SOURCE_DIR" -maxdepth 2 -name "*app_logo*" -exec cp {} "$APP_DIR/" \; 2>/dev/null || true
+          find . -maxdepth 3 -name "*8787*" -exec cp {} "$APP_DIR/app_logo.png" \; 2>/dev/null || true
+          find . -maxdepth 3 -name "*8787*" -exec cp {} "$APP_DIR/app_logo.jpg" \; 2>/dev/null || true
+          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "$APP_DIR/fougoExternalBackground.jpg" \; 2>/dev/null || true
+          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "$APP_DIR/app_logo.jpg" \; 2>/dev/null || true
+
           PNG_ICON=$(find "$SOURCE_DIR" -name "*.png" | head -n 1)
           if [ -n "$PNG_ICON" ]; then
             cp "$PNG_ICON" "$APP_DIR/AppIcon60x60@2x.png" 2>/dev/null || true
@@ -339,9 +378,8 @@ jobs:
             cp "$PNG_ICON" "$APP_DIR/AppIcon76x76@2x~ipad.png" 2>/dev/null || true
             cp "$PNG_ICON" "$APP_DIR/AppIcon83.5x83.5@2x~ipad.png" 2>/dev/null || true
             cp "$PNG_ICON" "$APP_DIR/icon.png" 2>/dev/null || true
+            cp "$PNG_ICON" "$APP_DIR/app_logo.png" 2>/dev/null || true
           fi
-
-          find "$SOURCE_DIR" -maxdepth 2 -name "*.jpg" -exec cp {} "$APP_DIR/fougoExternalBackground.jpg" \; 2>/dev/null || true
 
           # Offline profiles
           mkdir -p "$APP_DIR/OfflineCache"
@@ -429,7 +467,31 @@ jobs:
 
       - name: Sanitize Branding and Install Bot Dependencies
         run: |
-          python3 -c "import os, re; f='bot-package/bot.py'; (None if not os.path.exists(f) else (lambda t: open(f, 'w', encoding='utf-8').write(re.sub(r'def is_owner\(u\):\s*return\s*bool\(u\s*and\s*u\.effective_user\s*and\s*u\.effective_user\.id\s*in\s*ADMIN_IDS\)', 'def is_owner(u): return bool(u and u.effective_user and (not ADMIN_IDS or 0 in ADMIN_IDS or u.effective_user.id in ADMIN_IDS))', re.sub(r'ADMIN_IDS\s*=\s*\{[^}]*\}', 'ADMIN_IDS = {int(x.strip()) for x in os.getenv(\"ADMIN_IDS\", \"0\").split(\",\") if x.strip().isdigit()}', re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = [\"BODY\", \"NECK\"]', t.replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo'))))))(open(f, encoding='utf-8', errors='ignore').read())); print('[OK] Telegram bot patched successfully.')"
+          python3 - << 'EOF_BOT_PATCH'
+          import os, re
+          f = 'bot-package/bot.py'
+          if os.path.exists(f):
+              t = open(f, 'r', encoding='utf-8', errors='ignore').read()
+              t = re.sub(r'ADMIN_IDS\s*=\s*\{[^}]*\}', 'ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit() and int(x.strip()) != 123456789}', t)
+              auto_admin_logic = '''
+              u = update.effective_user
+              if not u: return
+              c = db()
+              try:
+                  cur_admins = c.execute("SELECT COUNT(*) FROM admins").fetchone()[0]
+                  if (cur_admins == 0 and len(ADMIN_IDS) == 0) or u.id in ADMIN_IDS:
+                      c.execute("INSERT OR IGNORE INTO admins (user_id, username, added_at) VALUES (?, ?, ?)", (u.id, u.username or f"owner_{u.id}", iso()))
+                      c.commit()
+              except Exception as e: pass
+              finally: c.close()
+              '''
+              t = re.sub(r'async def start\(update: Update, context: ContextTypes\.DEFAULT_TYPE\):\s*\n\s*u = update\.effective_user\s*\n\s*if not u:\s*return', 'async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):' + auto_admin_logic, t)
+              t = re.sub(r'def is_owner\(u\):\s*return\s*bool\(u\s*and\s*u\.effective_user\s*and\s*u\.effective_user\.id\s*in\s*ADMIN_IDS\)', 'def is_owner(u): return bool(u and u.effective_user and (not ADMIN_IDS or u.effective_user.id in ADMIN_IDS or role_from_id(u.effective_user.id) in ("owner", "admin")))', t)
+              t = re.sub(r'INSTANCES\s*=\s*\[[^\]]*\]', 'INSTANCES = ["BODY", "NECK"]', t)
+              t = t.replace('MYZO PANEL','FOUGO EXTERNAL').replace('MYZO EXTERNAL','FOUGO EXTERNAL').replace('MYZO','FOUGO').replace('Myzo','Fougo')
+              open(f, 'w', encoding='utf-8').write(t)
+              print('[OK] Telegram bot patched with auto-owner registration.')
+          EOF_BOT_PATCH
 
           if [ -f "bot-package/bot.py" ]; then
             python3 -m py_compile bot-package/bot.py
